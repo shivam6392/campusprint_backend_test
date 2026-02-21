@@ -35,6 +35,20 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'API is running', version: '1.0.0' });
 });
 
+app.get('/api/config', (req, res) => {
+    res.json({
+        RAZORPAY_KEY: process.env.RAZORPAY_KEY || '',
+        FIREBASE: {
+            apiKey: process.env.FIREBASE_API_KEY || '',
+            authDomain: "printpaymentapp.firebaseapp.com",
+            projectId: "printpaymentapp",
+            storageBucket: "printpaymentapp.firebasestorage.app",
+            messagingSenderId: "186477441652",
+            appId: "1:186477441652:web:placeholder"
+        }
+    });
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
     console.error(err.stack);

@@ -149,6 +149,7 @@ const App = {
 };
 
 // Boot
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await CONFIG.loadEnvConfig();
     App.start();
 });
