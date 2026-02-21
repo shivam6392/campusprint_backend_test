@@ -35,6 +35,17 @@ const API = {
         return data;
     },
 
+    async sync(name, email, password) {
+        const res = await fetch(`${CONFIG.API_BASE}/auth/sync`, {
+            method: 'POST',
+            headers: this._headers(),
+            body: JSON.stringify({ name, email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Google Auth Sync failed');
+        return data;
+    },
+
     // ── Print ───────────────────────────────
     async uploadPDF(file, copies, color) {
         const formData = new FormData();

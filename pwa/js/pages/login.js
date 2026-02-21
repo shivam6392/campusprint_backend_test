@@ -206,7 +206,45 @@ const LoginPage = {
         }
     },
 
-    handleGoogle() {
-        App.toast('Google Sign-In coming soon', 'info');
+    async handleGoogle() {
+        try {
+            // Initialize Firebase if not already initialized
+            if (!firebase.apps.length) {
+                firebase.initializeApp(CONFIG.FIREBASE);
+            }
+
+            const provider = new firebase.auth.GoogleAuthProvider();
+            // Optional: force account selection prompt
+            // provider.setCustomParameters({ prompt: 'select_account' });
+
+            App.toast('Opening Google Sign-In...', 'info');
+
+            const result = await firebase.auth().signInWithPopup(provider);
+            const user = result.user;
+
+            // user has displayName, email, uid mapping to Android's flow
+            const name = user.displayName || 'Google User';
+            const email = user.email;
+            const uid = user.uid;
+
+            // Sync with our backend
+            App.toast('Syncing account...', 'info');
+            const data = await API.sync(name, email, uid);
+
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('userName', data.name);
+            localStorage.setItem('userEmail', data.email);
+
+            App.toast(`Welcome, ${data.name}!`, 'success');
+            window.location.hash = '#order';
+
+        } catch (error) {
+            console.error(error);
+            if (error.code === 'auth/popup-closed-by-user') {
+                App.toast('Sign-in cancelled', 'error');
+            } else {
+                App.toast('Google Sign-In failed', 'error');
+            }
+        }
     }
 };
