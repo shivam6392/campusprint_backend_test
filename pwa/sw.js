@@ -1,4 +1,4 @@
-const CACHE_NAME = 'campusprint-v1';
+const CACHE_NAME = 'campusprint-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -7,7 +7,10 @@ const STATIC_ASSETS = [
     '/js/api.js',
     '/js/app.js',
     '/js/pages/login.js',
-    '/js/pages/dashboard.js',
+    '/js/pages/order.js',
+    '/js/pages/history.js',
+    '/js/pages/status.js',
+    '/js/pages/pdftools.js',
     '/js/pages/payment.js',
     '/icons/icon-192.webp',
     '/icons/icon-512.webp',
