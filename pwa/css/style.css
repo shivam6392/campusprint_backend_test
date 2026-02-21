@@ -92,51 +92,199 @@ body {
     }
 }
 
-/* ── Page Layout ────────────────────────── */
-.page {
-    flex: 1;
-    padding: 20px;
-    max-width: 480px;
-    margin: 0 auto;
-    width: 100%;
-    animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(8px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* ── Header ─────────────────────────────── */
-.page-header {
+/* ── App Bar ────────────────────────────── */
+.app-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--bg-primary);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 24px;
-    padding-top: 8px;
+    padding: 0 16px;
+    z-index: 50;
+    border-bottom: 1px solid var(--border-glass);
 }
 
-.page-header h1 {
-    font-size: 22px;
+.app-bar-brand {
+    display: flex;
+    align-items: baseline;
+}
+
+.icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 8px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.icon-btn:active {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Sidebar Drawer ─────────────────────── */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sidebar-drawer {
+    position: fixed;
+    top: 0;
+    right: -280px;
+    bottom: 0;
+    width: 280px;
+    background: var(--bg-secondary);
+    z-index: 110;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar-drawer.open {
+    transform: translateX(-280px);
+}
+
+.sidebar-header {
+    padding: 32px 20px 20px;
+    background: linear-gradient(135deg, var(--bg-primary), var(--bg-secondary));
+    border-bottom: 1px solid var(--border-glass);
+}
+
+.user-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 28px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.user-name {
+    font-size: 16px;
     font-weight: 700;
 }
 
-.page-header .subtitle {
+.user-email {
     font-size: 13px;
     color: var(--text-muted);
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
-.header-actions {
+.sidebar-content {
+    padding: 16px 0;
+    flex: 1;
+}
+
+.sidebar-item {
+    width: 100%;
     display: flex;
-    gap: 8px;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    text-align: left;
+}
+
+.sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+/* ── Bottom Navigation ──────────────────── */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: #16213E;
+    /* Matches Android BottomNav bg */
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 50;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    /* Inactive nav_item_color */
+    cursor: pointer;
+    transition: var(--transition);
+    gap: 4px;
+    height: 100%;
+}
+
+.nav-item svg {
+    fill: currentColor;
+    transition: var(--transition);
+}
+
+.nav-item.active {
+    color: #00E676;
+    /* Active nav_item_color */
+}
+
+.nav-item.active svg {
+    transform: scale(1.1);
+}
+
+.nav-item span {
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* ── Page Content Layout ────────────────── */
+.page-content {
+    flex: 1;
+    padding: 76px 20px 84px;
+    /* Space for Top AppBar and BottomNav */
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    animation: fadeIn 0.3s ease;
 }
 
 /* ── Glass Card ─────────────────────────── */
