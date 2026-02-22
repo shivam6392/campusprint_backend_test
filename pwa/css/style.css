@@ -222,6 +222,7 @@ body {
 .sidebar-item:hover {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
+
 }
 
 /* ── Bottom Navigation ──────────────────── */
@@ -901,7 +902,7 @@ body {
     justify-content: center;
     min-height: 100vh;
     padding: 28px;
-    background: linear-gradient(135deg, #1A1A2E, #16213E, #0F3460);
+    background: linear-gradient(135deg, #0F3460, #16213E, #1A1A2E);
 }
 
 .login-logo-row {
@@ -1026,4 +1027,61 @@ body {
     .page {
         padding: 32px;
     }
+}
+
+/* ── Android Login Animations ──────────────── */
+@keyframes scaleFadeIn {
+    0% {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes slideUpFadeIn {
+    0% {
+        transform: translateY(50px);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes bounceUp {
+    0% {
+        transform: translateY(100px);
+        opacity: 0;
+    }
+
+    60% {
+        transform: translateY(-10px);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.anim-scale-fade {
+    animation: scaleFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    opacity: 0;
+}
+
+.anim-slide-up {
+    animation: slideUpFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    opacity: 0;
+}
+
+.anim-bounce-up {
+    animation: bounceUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    opacity: 0;
 }
