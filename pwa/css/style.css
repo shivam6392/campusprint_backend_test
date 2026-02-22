@@ -866,7 +866,7 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: linear-gradient(135deg, #1A1A2E, #16213E, #0F3460);
+    background: linear-gradient(135deg, #0F3460, #16213E, #1A1A2E);
 }
 
 .splash-logo-row {
