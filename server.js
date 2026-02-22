@@ -37,7 +37,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/config', (req, res) => {
     res.json({
-        RAZORPAY_KEY: process.env.RAZORPAY_KEY || '',
+        RAZORPAY_KEY: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY || '',
         FIREBASE: {
             apiKey: process.env.FIREBASE_API_KEY || '',
             authDomain: "printpaymentapp.firebaseapp.com",
