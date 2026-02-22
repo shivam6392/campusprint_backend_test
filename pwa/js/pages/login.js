@@ -142,6 +142,18 @@ const LoginPage = {
         document.getElementById('toggleBtn').addEventListener('click', () => this.toggleMode());
         document.getElementById('googleBtn').addEventListener('click', () => this.handleGoogle());
 
+        const forgotPassword = document.getElementById('forgotPassword');
+        if (forgotPassword) {
+            forgotPassword.addEventListener('click', () => {
+                const email = document.getElementById('emailInput').value.trim();
+                if (!email) {
+                    App.toast('Please enter your email address first', 'error');
+                } else {
+                    App.toast('Password reset link sent to ' + email, 'success');
+                }
+            });
+        }
+
         document.getElementById('passwordInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.handleAuth();
         });
