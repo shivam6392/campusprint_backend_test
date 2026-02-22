@@ -129,6 +129,14 @@ const App = {
         this.currentPage = page;
         document.getElementById('pageContent').innerHTML = page.render();
         page.init();
+
+        // Hide bottom nav specifically for the payment page matching Android flow
+        const bottomNav = document.getElementById('bottomNav');
+        if (hash === '#payment') {
+            bottomNav.style.display = 'none';
+        } else {
+            bottomNav.style.display = 'flex';
+        }
     },
 
     // Toast notification

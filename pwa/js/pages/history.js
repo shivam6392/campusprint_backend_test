@@ -35,64 +35,65 @@ const HistoryPage = {
                 return;
             }
 
-            container.innerHTML = orders.map(order => {
-                const status = (order.paymentStatus || 'pending').toLowerCase();
-                const statusClass = status === 'paid' ? 'success' : status === 'failed' ? 'failed' : 'pending';
-                const icon = status === 'paid' ? '✅' : status === 'failed' ? '❌' : '⏳';
-                const date = order.createdAt ? order.createdAt.substring(0, 10) : '--';
+            const status = (order.paymentStatus || 'pending').toLowerCase();
+            const statusColor = status === 'paid' ? '#4ADE80' : status === 'failed' ? '#EF4444' : '#FBBF24';
+            const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+            // We'll replace these emojis with Android SVGs in the next step
+            const icon = status === 'paid' ? '✅' : status === 'failed' ? '❌' : '⏳';
+            const date = order.createdAt ? order.createdAt.substring(0, 10) : '--';
 
-                return `
-                <div class="card order-card" data-order='${JSON.stringify(order).replace(/'/g, "&#39;")}'>
-                    <div class="order-icon ${statusClass}">${icon}</div>
-                    <div class="order-info">
-                        <div class="order-name">${order.fileName || 'Unknown'}</div>
-                        <div class="order-meta">${date} • ${order.pages || 0} pages • ${order.copies || 1} copies</div>
-                    </div>
-                    <div class="order-right">
-                        <div class="order-cost">₹${order.totalCost || 0}</div>
-                        <div class="order-status ${statusClass}">${status}</div>
+            return `
+                <div class="card order-card" data-order='${JSON.stringify(order).replace(/'/g, "&#39;")}' style="display: flex; flex-direction: column; padding: 16px; margin-bottom: 10px;">
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.533); margin-bottom: 4px;">Date: ${date}</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #FFFFFF; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis;">${order.fileName || 'Unknown'}</div>
+                    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 10px;">
+                        <div style="font-size: 15px; font-weight: 700; color: #4ADE80;">₹${order.totalCost || 0}</div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span style="font-size: 16px;">${icon}</span>
+                            <span style="font-size: 13px; font-weight: 700; color: ${statusColor};">${statusText}</span>
+                        </div>
                     </div>
                 </div>
                 `;
-            }).join('');
+        }).join('');
 
-            // Click to show detail
-            container.querySelectorAll('.order-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const order = JSON.parse(card.dataset.order);
-                    this.showOrderDetail(order);
-                });
-            });
+    // Click to show detail
+    container.querySelectorAll('.order-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const order = JSON.parse(card.dataset.order);
+            this.showOrderDetail(order);
+        });
+    });
 
-        } catch (err) {
-            container.innerHTML = `
+} catch (err) {
+    container.innerHTML = `
                 <div class="empty-state">
                     <div class="icon">⚠️</div>
                     <div class="text">${err.message}</div>
                 </div>
             `;
-        }
+}
     },
 
-    showOrderDetail(order) {
-        const status = (order.paymentStatus || 'pending').toLowerCase();
-        const statusColor = status === 'paid' ? 'var(--success)' : status === 'failed' ? 'var(--error)' : 'var(--warning)';
-        let dateStr = '--', timeStr = '--';
+showOrderDetail(order) {
+    const status = (order.paymentStatus || 'pending').toLowerCase();
+    const statusColor = status === 'paid' ? 'var(--success)' : status === 'failed' ? 'var(--error)' : 'var(--warning)';
+    let dateStr = '--', timeStr = '--';
 
-        try {
-            const d = new Date(order.createdAt);
-            dateStr = d.toLocaleDateString('en-IN');
-            timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-        } catch (e) { }
+    try {
+        const d = new Date(order.createdAt);
+        dateStr = d.toLocaleDateString('en-IN');
+        timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { }
 
-        const codeSection = (status === 'paid' && order.printCode)
-            ? `<div class="modal-code" id="copyCode" data-code="${order.printCode}">
+    const codeSection = (status === 'paid' && order.printCode)
+        ? `<div class="modal-code" id="copyCode" data-code="${order.printCode}">
                    <div class="hint">Tap to copy</div>
                    <div class="code">${order.printCode}</div>
                </div>`
-            : '';
+        : '';
 
-        const html = `
+    const html = `
         <div class="modal-overlay" id="orderModal">
             <div class="modal">
                 <div class="modal-header">
@@ -134,23 +135,23 @@ const HistoryPage = {
         </div>
         `;
 
-        document.body.insertAdjacentHTML('beforeend', html);
+    document.body.insertAdjacentHTML('beforeend', html);
 
-        document.getElementById('closeModal').addEventListener('click', () => {
-            document.getElementById('orderModal').remove();
+    document.getElementById('closeModal').addEventListener('click', () => {
+        document.getElementById('orderModal').remove();
+    });
+
+    document.getElementById('orderModal').addEventListener('click', (e) => {
+        if (e.target.id === 'orderModal') document.getElementById('orderModal').remove();
+    });
+
+    const copyBtn = document.getElementById('copyCode');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(copyBtn.dataset.code);
+            App.toast('Code copied!', 'success');
         });
-
-        document.getElementById('orderModal').addEventListener('click', (e) => {
-            if (e.target.id === 'orderModal') document.getElementById('orderModal').remove();
-        });
-
-        const copyBtn = document.getElementById('copyCode');
-        if (copyBtn) {
-            copyBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(copyBtn.dataset.code);
-                App.toast('Code copied!', 'success');
-            });
-        }
     }
+}
 };

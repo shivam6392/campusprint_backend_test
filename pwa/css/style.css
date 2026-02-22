@@ -92,25 +92,34 @@ body {
     }
 }
 
-/* ── App Bar ────────────────────────────── */
-.app-bar {
+/* ── Global Menu Button ─────────────────── */
+.global-menu-btn {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 56px;
-    background: var(--bg-primary);
+    top: 20px;
+    right: 20px;
+    z-index: 60;
+    background: rgba(26, 26, 46, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border-glass);
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    z-index: 50;
-    border-bottom: 1px solid var(--border-glass);
+    justify-content: center;
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: var(--transition);
 }
 
-.app-bar-brand {
-    display: flex;
-    align-items: baseline;
+.global-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.global-menu-btn:active {
+    transform: scale(0.95);
 }
 
 .icon-btn {
@@ -280,8 +289,8 @@ body {
 /* ── Page Content Layout ────────────────── */
 .page-content {
     flex: 1;
-    padding: 76px 20px 84px;
-    /* Space for Top AppBar and BottomNav */
+    padding: 20px 20px 84px;
+    /* 20px padding matches Android layout padding */
     width: 100%;
     max-width: 480px;
     margin: 0 auto;
@@ -313,11 +322,12 @@ body {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 12px 20px;
+    height: 52px;
+    padding: 0 20px;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: 16px;
     font-family: var(--font);
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
@@ -330,12 +340,12 @@ body {
 }
 
 .btn-primary {
-    background: var(--accent);
+    background: linear-gradient(90deg, #E94560, #C23152);
     color: white;
 }
 
 .btn-primary:hover {
-    background: var(--accent-hover);
+    background: linear-gradient(90deg, #d63851, #b02947);
 }
 
 .btn-primary:disabled {
@@ -365,7 +375,8 @@ body {
 }
 
 .btn-sm {
-    padding: 8px 14px;
+    height: 36px;
+    padding: 0 14px;
     font-size: 12px;
     width: auto;
 }
@@ -387,24 +398,25 @@ body {
 
 .input {
     width: 100%;
-    padding: 12px 14px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-sm);
+    height: 52px;
+    padding: 0 16px;
+    background: rgba(255, 255, 255, 0.133);
+    border: 1px solid rgba(255, 255, 255, 0.267);
+    border-radius: 16px;
     color: var(--text-primary);
     font-family: var(--font);
-    font-size: 14px;
+    font-size: 15px;
     outline: none;
     transition: var(--transition);
 }
 
 .input:focus {
-    border-color: var(--accent);
-    background: rgba(255, 255, 255, 0.07);
+    border: 1.5px solid var(--accent);
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .input::placeholder {
-    color: var(--text-muted);
+    color: rgba(255, 255, 255, 0.533);
 }
 
 /* ── Toggle / Switch ────────────────────── */
@@ -935,6 +947,22 @@ body {
     width: 100%;
     max-width: 380px;
     padding: 24px;
+    background: rgba(255, 255, 255, 0.094);
+    border: 1px solid rgba(255, 255, 255, 0.133);
+    border-radius: 24px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+.forgot-password {
+    text-align: right;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    margin-top: -6px;
+    cursor: pointer;
 }
 
 .login-card-title {

@@ -1,155 +1,91 @@
 // ============================================
-// CampusPrint PWA — Payment Page
+// CampusPrint PWA — Payment / Outcome Page
 // ============================================
 
 const PaymentPage = {
-    orderId: null,
-    amount: 0,
-
     render() {
-        // Parse URL params
-        const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
-        this.orderId = params.get('id');
-        this.amount = parseFloat(params.get('amount')) || 0;
-
         return `
-        <div class="page">
-            <!-- Payment Screen -->
-            <div id="paymentScreen">
-                <div class="page-header">
-                    <div>
-                        <h1>Payment</h1>
-                        <div class="subtitle">Complete your order</div>
-                    </div>
-                </div>
-
-                <div class="card payment-amount">
-                    <div class="label">Total Amount</div>
-                    <div class="amount">₹${this.amount}</div>
-                </div>
-
-                <button class="btn btn-primary" style="margin-top: 20px;" id="razorpayBtn">
-                    Pay using Razorpay
-                </button>
-                <button class="btn btn-secondary" style="margin-top: 10px;" id="backBtn">
-                    Go Back
-                </button>
+        <!-- Payment Pending Container -->
+        <div id="paymentContainer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 75vh;">
+            <div class="card" style="width: 100%; max-width: 380px; text-align: center; margin-bottom: 32px; padding: 32px;">
+                <h2 style="font-size: 22px; font-weight: 700; color: #FFFFFF; margin-bottom: 16px;">Payment</h2>
+                <div style="width: 40px; height: 3px; background: #E94560; margin: 0 auto 24px;"></div>
+                <div style="font-size: 32px; font-weight: 700; color: #4ADE80; letter-spacing: 0.5px;">Total Cost: INR <span id="paymentTotalAmount">0</span></div>
             </div>
+            
+            <button class="btn btn-primary" id="btnRazorpay" style="width: 100%; max-width: 380px; height: 56px; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; border-radius: 12px; margin-bottom: 12px;">Pay using Razorpay</button>
+            <button class="btn btn-outline" id="btnCancelPayment" style="width: 100%; max-width: 380px; height: 56px; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; border-radius: 12px;">Cancel</button>
+        </div>
 
-            <!-- Success Screen -->
-            <div id="successScreen" style="display: none;">
-                <div class="result-screen">
-                    <div class="result-icon">✅</div>
-                    <div class="result-title">Order Confirmed!</div>
-                    <div class="result-subtitle">Show this code at the print counter</div>
-                    <div class="result-code" id="printCode" title="Tap to copy"></div>
-                    <div class="result-meta" id="txnId"></div>
-                    <div class="result-meta" id="txnTime"></div>
-                </div>
-                <button class="btn btn-primary" id="doneBtn">Go to History</button>
-            </div>
+        <!-- Payment Success Container (Hidden) -->
+        <div id="successContainer" style="display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 75vh; position: relative;">
+            <svg viewBox="0 0 24 24" fill="#4ADE80" style="width: 100px; height: 100px; margin-bottom: 24px;">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+            
+            <div style="font-size: 24px; font-weight: 700; color: #FFFFFF; margin-bottom: 8px;">Order Confirmed!</div>
+            <div id="successPrintCode" style="font-size: 48px; font-weight: 700; color: #4ADE80; letter-spacing: 0.1px; margin-bottom: 32px;">1234</div>
+            
+            <div style="font-size: 13px; color: rgba(255,255,255,0.53); margin-bottom: 4px;" id="successTxnId">Txn ID: ...</div>
+            <div style="font-size: 13px; color: rgba(255,255,255,0.53);" id="successTime">Time: ...</div>
 
-            <!-- Failed Screen -->
-            <div id="failedScreen" style="display: none;">
-                <div class="result-screen">
-                    <div class="result-icon">❌</div>
-                    <div class="result-title" style="color: var(--error);">Payment Failed</div>
-                    <div class="result-subtitle" id="failedMsg">Your payment could not be processed.</div>
-                </div>
-                <button class="btn btn-primary" id="retryBtn">Retry Payment</button>
-                <button class="btn btn-secondary" style="margin-top: 10px;" id="failBackBtn">Go Back</button>
-            </div>
+            <button class="btn btn-primary" id="btnSuccessDone" style="width: 100%; max-width: 380px; height: 52px; font-size: 16px; font-weight: 700; margin-top: 48px; border-radius: 12px;">Done</button>
         </div>
         `;
     },
 
     init() {
-        document.getElementById('razorpayBtn').addEventListener('click', () => this.startPayment());
-        document.getElementById('backBtn').addEventListener('click', () => {
-            window.location.hash = '#dashboard';
-        });
-        document.getElementById('doneBtn').addEventListener('click', () => {
-            window.location.hash = '#dashboard';
-            setTimeout(() => DashboardPage.switchTab('history'), 100);
-        });
-        document.getElementById('retryBtn').addEventListener('click', () => {
-            document.getElementById('failedScreen').style.display = 'none';
-            document.getElementById('paymentScreen').style.display = 'block';
-        });
-        document.getElementById('failBackBtn').addEventListener('click', () => {
-            window.location.hash = '#dashboard';
-        });
-    },
+        // Read amount from localStorage or URL hash
+        const amount = localStorage.getItem('pendingPaymentAmount') || '0';
+        document.getElementById('paymentTotalAmount').textContent = amount;
 
-    startPayment() {
-        if (!this.orderId) {
-            App.toast('Invalid order', 'error');
-            return;
-        }
+        const btnRp = document.getElementById('btnRazorpay');
+        if (btnRp) {
+            btnRp.addEventListener('click', () => {
+                // Mock payment process
+                const btnOriginalText = btnRp.textContent;
+                btnRp.textContent = "Processing...";
+                btnRp.disabled = true;
 
-        const options = {
-            key: CONFIG.RAZORPAY_KEY,
-            amount: Math.round(this.amount * 100),
-            currency: 'INR',
-            name: 'CampusPrint',
-            description: 'Print Charges',
-            image: 'https://s3.amazonaws.com/rzp-mobile/images/rzp.png',
-            theme: { color: '#E94560' },
-            handler: (response) => {
-                this.onPaymentSuccess(response.razorpay_payment_id);
-            },
-            modal: {
-                ondismiss: () => {
-                    this.onPaymentFailed('Payment was cancelled');
-                }
-            },
-            prefill: {
-                email: localStorage.getItem('userEmail') || '',
-            }
-        };
-
-        try {
-            const rzp = new Razorpay(options);
-            rzp.on('payment.failed', (response) => {
-                this.onPaymentFailed(response.error.description || 'Payment failed');
+                setTimeout(() => {
+                    this.showSuccess(amount);
+                }, 1500);
             });
-            rzp.open();
-        } catch (err) {
-            App.toast('Error loading Razorpay: ' + err.message, 'error');
         }
-    },
 
-    async onPaymentSuccess(paymentId) {
-        try {
-            const data = await API.pay(this.orderId, paymentId);
-
-            document.getElementById('paymentScreen').style.display = 'none';
-            document.getElementById('successScreen').style.display = 'block';
-
-            document.getElementById('printCode').textContent = data.printCode || '----';
-            document.getElementById('txnId').textContent = `Txn ID: ${paymentId}`;
-            document.getElementById('txnTime').textContent = `Time: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
-
-            // Tap to copy
-            document.getElementById('printCode').addEventListener('click', () => {
-                navigator.clipboard.writeText(data.printCode || '');
-                App.toast('Code copied!', 'success');
+        const btnCancel = document.getElementById('btnCancelPayment');
+        if (btnCancel) {
+            btnCancel.addEventListener('click', () => {
+                window.location.hash = '#order';
             });
+        }
 
-        } catch (err) {
-            App.toast('Backend error: ' + err.message, 'error');
+        const btnDone = document.getElementById('btnSuccessDone');
+        if (btnDone) {
+            btnDone.addEventListener('click', () => {
+                window.location.hash = '#history';
+            });
         }
     },
 
-    async onPaymentFailed(reason) {
-        try {
-            await API.payFailed(this.orderId, reason);
-        } catch (e) {
-            // Silent fail on backend notification
-        }
+    showSuccess(amount) {
+        document.getElementById('paymentContainer').style.display = 'none';
 
-        document.getElementById('paymentScreen').style.display = 'none';
-        document.getElementById('failedScreen').style.display = 'block';
-        document.getElementById('failedMsg').textContent = reason || 'Your payment could not be processed.';
+        const successContainer = document.getElementById('successContainer');
+        successContainer.style.display = 'flex';
+        successContainer.classList.add('anim-scale-in');
+
+        // Generate mock code and txn hash
+        const code = Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('successPrintCode').textContent = code;
+
+        const txn = 'pay_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        document.getElementById('successTxnId').textContent = 'Txn ID: ' + txn;
+
+        const d = new Date();
+        document.getElementById('successTime').textContent = 'Time: ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ', ' + d.toLocaleDateString('en-IN');
+
+        // Remove pending amount
+        localStorage.removeItem('pendingPaymentAmount');
     }
 };

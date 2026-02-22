@@ -12,7 +12,7 @@ const PdfToolsPage = {
 
         <!-- Image to PDF Card -->
         <div class="tool-card" id="btnImgToPdf" style="display: flex; align-items: center; background: var(--bg-card); padding: 20px; border-radius: 16px; margin-bottom: 14px; cursor: pointer; border: 1px solid var(--border-glass);">
-            <div style="width: 48px; height: 48px; background: rgba(74, 222, 128, 0.15); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
+            <div style="width: 48px; height: 48px; background: rgba(74, 222, 128, 0.1); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="#4ADE80"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
             </div>
             <div style="flex: 1;">
@@ -24,7 +24,7 @@ const PdfToolsPage = {
 
         <!-- Word to PDF Card -->
         <div class="tool-card" id="btnWordToPdf" style="display: flex; align-items: center; background: var(--bg-card); padding: 20px; border-radius: 16px; margin-bottom: 14px; cursor: pointer; border: 1px solid var(--border-glass);">
-            <div style="width: 48px; height: 48px; background: rgba(96, 165, 250, 0.15); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
+            <div style="width: 48px; height: 48px; background: rgba(96, 165, 250, 0.1); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="#60A5FA"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M8 15.01l1.41 1.41L11 14.84V19h2v-4.16l1.59 1.59L16 15.01 12.01 11z"/></svg>
             </div>
             <div style="flex: 1;">
@@ -36,7 +36,7 @@ const PdfToolsPage = {
 
         <!-- Merge PDFs Card -->
         <div class="tool-card" id="btnMergePdf" style="display: flex; align-items: center; background: var(--bg-card); padding: 20px; border-radius: 16px; margin-bottom: 14px; cursor: pointer; border: 1px solid var(--border-glass);">
-            <div style="width: 48px; height: 48px; background: rgba(233, 69, 96, 0.15); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
+            <div style="width: 48px; height: 48px; background: rgba(233, 69, 96, 0.1); border-radius: 12px; display: flex; justify-content: center; align-items: center; margin-right: 16px;">
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="#E94560"><path d="M8 16h8v2H8zM8 12h8v2H8zM14 2H6C4.9 2 4 2.9 4 4v16c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8L14 2zM18 20H6V4h7v5h5v11z"/></svg>
             </div>
             <div style="flex: 1;">
