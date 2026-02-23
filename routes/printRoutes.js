@@ -69,8 +69,23 @@ router.get('/orders', protect, async (req, res) => {
 router.get('/debug-db', async (req, res) => {
     try {
         const orders = await PrintRequest.find().sort({ createdAt: -1 }).limit(3);
-        const cache = await WebhookCache.find().sort({ createdAt: -1 }).limit(3);
+        const cache = await mongoose.connection.collection('webhookcaches').find().sort({ createdAt: -1 }).limit(3).toArray();
         res.json({ orders, cache });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/debug-xref', async (req, res) => {
+    try {
+        const recent = await PrintRequest.findOne().sort({ createdAt: -1 });
+        const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint-storage-bucket';
+        const parsedCount = await getPageCount(storage, bucketName, recent.publicId);
+        res.json({
+            publicId: recent.publicId,
+            savedPages: recent.pages,
+            reParsedCount: parsedCount
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
