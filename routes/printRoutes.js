@@ -122,7 +122,10 @@ router.post('/orders', protect, async (req, res) => {
             pages = resource.pages || 1;
         } catch (cloudinaryErr) {
             console.error("Cloudinary Admin API Error:", cloudinaryErr);
-            return res.status(400).json({ success: false, message: 'Failed to verify file on Cloudinary' });
+            return res.status(400).json({
+                success: false,
+                message: `Cloudinary Verification Failed: ${cloudinaryErr.message || cloudinaryErr.error?.message || 'Unknown error'}`
+            });
         }
 
         // 5. Server-Side Native Pricing Calculation
