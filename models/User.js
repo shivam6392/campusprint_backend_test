@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    walletBalance: {
+        type: Number,
+        default: 0,
+        min: [0, 'Wallet balance cannot be negative']
+    },
     createdAt: {
         type: Date,
         default: Date.now,

@@ -9,6 +9,7 @@ const mongoose = require('mongoose'); // Added mongoose import
 
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
+const User = require('../models/User');
 
 // ==================================
 // Race Condition Webhook Cache Model
@@ -358,6 +359,68 @@ router.post('/pay', protect, async (req, res) => {
             success: false,
             message: error.message
         });
+    }
+});
+
+// ================================
+// PAY WITH WALLET (Atomic Checkout)
+// ================================
+router.post('/pay-wallet', protect, async (req, res) => {
+    try {
+        const { printRequestId } = req.body;
+
+        // 1. Fetch the exact order cost directly from database (Do not trust frontend math)
+        const order = await PrintRequest.findById(printRequestId);
+        if (!order) return res.status(404).json({ success: false, message: 'Print request not found' });
+        if (order.paymentStatus === 'paid') return res.status(400).json({ success: false, message: 'Already paid' });
+        if (order.paymentStatus === 'verifying') return res.status(400).json({ success: false, message: 'Order is still verifying pages' });
+
+        const cost = order.totalCost;
+
+        // 2. Fetch User and enforce initial balance check
+        const user = await User.findById(req.user._id);
+        if (user.walletBalance < cost) {
+            return res.status(400).json({
+                success: false,
+                message: 'Insufficient Wallet Balance'
+            });
+        }
+
+        // 3. The ATOMIC Lock & Deduct (Prevents double-tap race conditions)
+        // We query for the user AGAIN, but this time strongly enforcing $gte (greater than/equal) directly in the engine query
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: req.user._id, walletBalance: { $gte: cost } },
+            { $inc: { walletBalance: -cost } },
+            { new: true } // Returns the updated document
+        );
+
+        if (!updatedUser) {
+            // If the query returns null, it means in the 1 millisecond between Step 2 and 3, their balance dropped 
+            // completely circumventing the race condition!
+            return res.status(400).json({
+                success: false,
+                message: 'Transaction Failed: Insufficient funds or concurrent transaction'
+            });
+        }
+
+        // 4. Finalize the Print Order
+        const printCode = Math.floor(1000 + Math.random() * 9000).toString();
+        order.paymentStatus = 'paid';
+        order.printCode = printCode;
+        order.paymentId = `wallet_${Date.now()}`;
+        await order.save();
+
+        res.json({
+            success: true,
+            message: 'Wallet payment successful',
+            printCode: printCode,
+            newBalance: updatedUser.walletBalance,
+            data: order
+        });
+
+    } catch (error) {
+        console.error("Wallet Checkout Error:", error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
