@@ -10,6 +10,7 @@ const mongoose = require('mongoose'); // Added mongoose import
 
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
+const { getPageCount } = require('../utils/pdfParser');
 
 // ================================
 // Race Condition Webhook Cache Model
@@ -114,7 +115,7 @@ router.get('/upload-signature', protect, signatureLimiter, async (req, res) => {
 // Create Order (Instant Native Validation)
 // ================================
 router.post('/orders', protect, async (req, res) => {
-    const { pdfUrl, publicId, originalName, copies, color, pages, idempotencyKey } = req.body;
+    const { pdfUrl, publicId, originalName, copies, color, idempotencyKey } = req.body;
 
     try {
         // 1. Idempotency Check
@@ -134,9 +135,11 @@ router.post('/orders', protect, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 3. Calculate Prices Fast (Bypassing Cloud Functions)
+        // 3. Calculate Prices Securely (Server-Side XREF Parsing bypasses Android spoofing)
         const finalCopies = parseInt(copies) || 1;
-        const finalPages = parseInt(pages) || 1;
+        const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint-storage-bucket';
+        const finalPages = await getPageCount(storage, bucketName, publicId);
+
         const isColor = color === true || color === 'true';
         const pricePerPage = isColor ? 8 : 1;
         const parsedCost = finalPages * finalCopies * pricePerPage;
