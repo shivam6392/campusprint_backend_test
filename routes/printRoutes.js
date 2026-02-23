@@ -240,7 +240,7 @@ router.post('/webhook/gcp-verify', async (req, res) => {
             await WebhookCache.findOneAndUpdate(
                 { publicId: publicId },
                 { pages: pages },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
             return res.status(200).json({ success: true, message: 'Early Webhook Cached successfully' });
         }
