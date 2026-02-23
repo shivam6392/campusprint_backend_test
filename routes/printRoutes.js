@@ -10,7 +10,6 @@ const mongoose = require('mongoose'); // Added mongoose import
 
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
-const { getPageCount } = require('../utils/pdfParser');
 
 // ================================
 // Race Condition Webhook Cache Model
@@ -150,14 +149,24 @@ router.post('/orders', protect, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 3. Calculate Prices Securely (Server-Side XREF Parsing bypasses Android spoofing)
+        // 3. Early Webhook Cache Check (Fix for Cloud Function Race Condition)
         const finalCopies = parseInt(copies) || 1;
-        const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint-storage-bucket';
-        const finalPages = await getPageCount(storage, bucketName, publicId);
-
         const isColor = color === true || color === 'true';
-        const pricePerPage = isColor ? 8 : 1;
-        const parsedCost = finalPages * finalCopies * pricePerPage;
+
+        let finalPages = 1;
+        let initialStatus = 'verifying';
+        let parsedCost = 1;
+
+        // Try to fetch instantly from cache if the insanely fast webhook already fired
+        const cachedPing = await mongoose.connection.collection('webhookcaches').findOne({ publicId });
+
+        if (cachedPing) {
+            console.log(`⚡ RACE CONDITION CACHE HIT for ${publicId}. Pages: ${cachedPing.pages}`);
+            finalPages = cachedPing.pages;
+            initialStatus = 'pending';
+            const pricePerPage = isColor ? 8 : 1;
+            parsedCost = finalPages * finalCopies * pricePerPage;
+        }
 
         // 4. DB Insertion 
         const printRequest = await PrintRequest.create({
@@ -165,12 +174,12 @@ router.post('/orders', protect, async (req, res) => {
             pdfUrl: pdfUrl,
             publicId: publicId,
             fileName: originalName || 'Document.pdf',
-            pages: finalPages,
             copies: finalCopies,
+            pages: finalPages,
             color: isColor,
             totalCost: parsedCost,
-            paymentStatus: 'pending',
-            idempotencyKey: idempotencyKey,
+            paymentStatus: initialStatus,
+            idempotencyKey: idempotencyKey || null,
             createdAt: new Date()
         });
 

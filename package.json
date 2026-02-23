@@ -22,6 +22,7 @@
     "mongoose": "^9.2.1",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4"
   }
 }
