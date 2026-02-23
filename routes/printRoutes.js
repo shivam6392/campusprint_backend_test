@@ -65,6 +65,16 @@ router.get('/orders', protect, async (req, res) => {
 // ================================
 // Generate GCP Signed URL
 // ================================
+router.get('/debug-db', async (req, res) => {
+    try {
+        const orders = await PrintRequest.find().sort({ createdAt: -1 }).limit(3);
+        const cache = await WebhookCache.find().sort({ createdAt: -1 }).limit(3);
+        res.json({ orders, cache });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/upload-signature', protect, signatureLimiter, async (req, res) => {
     try {
         const timestamp = Math.round((new Date).getTime() / 1000);
