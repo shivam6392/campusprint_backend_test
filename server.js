@@ -34,8 +34,6 @@ if (!fs.existsSync(uploadDir)) {
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/print', require('./routes/printRoutes'));
 
-// Serve PWA static files
-app.use(express.static(path.join(__dirname, 'pwa')));
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'API is running', version: '1.0.0' });
