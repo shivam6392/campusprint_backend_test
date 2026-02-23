@@ -1,20 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const cloudinary = require('cloudinary').v2;
-const fs = require('fs');
-const rateLimit = require('express-rate-limit');
-const crypto = require('crypto');
+const { Storage } = require('@google-cloud/storage');
+const pdf = require('pdf-parse');
+const os = require('os');
+const path = require('path');
 
-const { protect } = require('../middleware/authMiddleware');
-const PrintRequest = require('../models/PrintRequest');
-
-
-// Cloudinary config
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+// GCP config
+const storage = new Storage({
+    projectId: process.env.GCP_PROJECT_ID,
+    credentials: {
+        client_email: process.env.GCP_CLIENT_EMAIL,
+        private_key: process.env.GCP_PRIVATE_KEY ? process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
+    }
 });
+const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint_uploads';
 
 // Rate limiting for signatures
 const signatureLimiter = rateLimit({
@@ -48,37 +47,39 @@ router.get('/orders', protect, async (req, res) => {
 
 
 // ================================
-// Generate Cloudinary Signature
+// Generate GCP Signed URL
 // ================================
-router.get('/upload-signature', protect, signatureLimiter, (req, res) => {
+router.get('/upload-signature', protect, signatureLimiter, async (req, res) => {
     try {
         const timestamp = Math.round((new Date).getTime() / 1000);
         const folder = 'campusprint_uploads';
 
-        // Cloudinary signs the parameters we want to enforce
-        const paramsToSign = {
-            timestamp: timestamp,
-            folder: folder
+        // Generate a completely unique file path so uploads never collide
+        const uniqueFileName = `${req.user._id}_${timestamp}_${crypto.randomBytes(4).toString('hex')}.pdf`;
+        const publicId = `${folder}/${uniqueFileName}`;
+
+        // V4 Signed URL for raw PUT upload
+        const options = {
+            version: 'v4',
+            action: 'write',
+            expires: Date.now() + 15 * 60 * 1000, // Valid for 15 minutes
+            contentType: 'application/pdf',
         };
 
-        const signature = cloudinary.utils.api_sign_request(
-            paramsToSign,
-            process.env.CLOUDINARY_API_SECRET
-        );
+        const [signedUrl] = await storage.bucket(bucketName).file(publicId).getSignedUrl(options);
 
+        // We return the identical keys expected by the frontend (signedUrl acts as the signature hook)
         res.json({
             success: true,
             data: {
-                signature,
-                timestamp,
-                folder,
-                cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-                api_key: process.env.CLOUDINARY_API_KEY
+                signedUrl: signedUrl,
+                publicId: publicId,
+                timestamp: timestamp
             }
         });
     } catch (error) {
         console.error("Signature Error:", error);
-        res.status(500).json({ success: false, message: 'Could not generate signature' });
+        res.status(500).json({ success: false, message: 'Could not generate GCP Signed URL' });
     }
 });
 
@@ -102,29 +103,32 @@ router.post('/orders', protect, async (req, res) => {
             }
         }
 
-        // 2. Domain Whitelist Verification
-        if (!pdfUrl || !pdfUrl.startsWith(`https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/`)) {
-            return res.status(400).json({ success: false, message: 'Invalid or unauthorized Cloudinary URL' });
-        }
-
-        // 3. Folder Alignment Verification
+        // 2. Folder Alignment Verification
         if (!publicId || !publicId.startsWith('campusprint_uploads/')) {
-            return res.status(400).json({ success: false, message: 'Invalid Cloudinary Public ID folder' });
+            return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 4. Admin API Verification - Fetch the True Page Count
+        // 3. Server-side PDF Page Count Verification via GCP Download
         let pages = 1;
+        const tempFilePath = path.join(os.tmpdir(), `${req.user._id}_${Date.now()}.pdf`);
+
         try {
-            const resource = await cloudinary.api.resource(publicId, { pages: true });
-            if (resource.format !== 'pdf') {
-                return res.status(400).json({ success: false, message: 'File is not a PDF' });
-            }
-            pages = resource.pages || 1;
-        } catch (cloudinaryErr) {
-            console.error("Cloudinary Admin API Error:", cloudinaryErr);
+            // Because GCP does not count pages natively, we must stream it securely into a temp server buffer
+            await storage.bucket(bucketName).file(publicId).download({ destination: tempFilePath });
+
+            // Read buffer and extract actual PDF metadata
+            const dataBuffer = require('fs').readFileSync(tempFilePath);
+            const pdfData = await pdf(dataBuffer);
+            pages = pdfData.numpages || 1;
+
+            // Cleanup temp file to save Render SSD space
+            require('fs').unlinkSync(tempFilePath);
+        } catch (gcpErr) {
+            console.error("GCP Verification Error:", gcpErr);
+            if (require('fs').existsSync(tempFilePath)) require('fs').unlinkSync(tempFilePath);
             return res.status(400).json({
                 success: false,
-                message: `Cloudinary Verification Failed: ${cloudinaryErr.message || cloudinaryErr.error?.message || 'Unknown error'}`
+                message: `GCP Verification Failed: ${gcpErr.message || 'Unknown error'}`
             });
         }
 
