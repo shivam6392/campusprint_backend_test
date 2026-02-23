@@ -113,54 +113,28 @@ router.post('/orders', protect, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 3. Server-side PDF Page Count Verification via GCP Download
-        let pages = 1;
-        const tempFilePath = path.join(os.tmpdir(), `${req.user._id}_${Date.now()}.pdf`);
-
-        try {
-            // Because GCP does not count pages natively, we must stream it securely into a temp server buffer
-            await storage.bucket(bucketName).file(publicId).download({ destination: tempFilePath });
-
-            // Read buffer and extract actual PDF metadata
-            const dataBuffer = require('fs').readFileSync(tempFilePath);
-            const pdfData = await pdf(dataBuffer);
-            pages = pdfData.numpages || 1;
-
-            // Cleanup temp file to save Render SSD space
-            require('fs').unlinkSync(tempFilePath);
-        } catch (gcpErr) {
-            console.error("GCP Verification Error:", gcpErr);
-            if (require('fs').existsSync(tempFilePath)) require('fs').unlinkSync(tempFilePath);
-            return res.status(400).json({
-                success: false,
-                message: `GCP Verification Failed: ${gcpErr.message || 'Unknown error'}`
-            });
-        }
-
-        // 5. Server-Side Native Pricing Calculation
+        // 3. Create verifying order placeholder
         const finalCopies = parseInt(copies) || 1;
         const isColor = color === true || color === 'true';
-        const pricePerPage = isColor ? 8 : 1;
-        const totalCost = pages * finalCopies * pricePerPage;
 
-        // 6. DB Insertion
+        // 4. DB Insertion (verifying state, 0 pages initially)
         const printRequest = await PrintRequest.create({
             userId: req.user._id,
             pdfUrl: pdfUrl,
             publicId: publicId,
             fileName: originalName || 'Document.pdf',
-            pages: pages,
+            pages: 0,
             copies: finalCopies,
             color: isColor,
-            totalCost: totalCost,
-            paymentStatus: 'pending',
+            totalCost: 0,
+            paymentStatus: 'verifying',
             idempotencyKey: idempotencyKey,
             createdAt: new Date()
         });
 
         res.status(201).json({
             success: true,
-            message: 'Order created successfully',
+            message: 'Order created in verifying state',
             data: printRequest
         });
 
@@ -170,6 +144,65 @@ router.post('/orders', protect, async (req, res) => {
     }
 });
 
+// ================================
+// Poll Order Status (For Android UI)
+// ================================
+router.get('/orders/:id/status', protect, async (req, res) => {
+    try {
+        const order = await PrintRequest.findById(req.params.id);
+        if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+        res.json({
+            success: true,
+            data: {
+                id: order._id,
+                paymentStatus: order.paymentStatus,
+                pages: order.pages,
+                totalCost: order.totalCost,
+                publicId: order.publicId
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+});
+
+// ================================
+// Cloud Function Webhook (Updates Page Count)
+// ================================
+router.post('/webhook/gcp-verify', async (req, res) => {
+    try {
+        const { publicId, pages, secret } = req.body;
+
+        // 1. Verify Secret Key to prevent malicious spoofing
+        const WEBHOOK_SECRET = process.env.GCP_WEBHOOK_SECRET || 'campusprint_gcp_secret_2026';
+        if (secret !== WEBHOOK_SECRET) {
+            return res.status(403).json({ success: false, message: 'Invalid Webhook Secret' });
+        }
+
+        // 2. Find the verifying order
+        const order = await PrintRequest.findOne({ publicId, paymentStatus: 'verifying' });
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Verifying order not found for this publicId' });
+        }
+
+        // 3. Calculate Final Price
+        const pricePerPage = order.color ? 8 : 1;
+        const totalCost = pages * order.copies * pricePerPage;
+
+        // 4. Update the Order
+        order.pages = pages;
+        order.totalCost = totalCost;
+        order.paymentStatus = 'pending';
+        await order.save();
+
+        res.json({ success: true, message: 'Order verified and updated to pending' });
+    } catch (error) {
+        console.error("Webhook Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 
 // ================================
