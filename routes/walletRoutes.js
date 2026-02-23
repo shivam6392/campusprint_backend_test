@@ -24,7 +24,7 @@ router.post('/create-order', protect, async (req, res) => {
         const options = {
             amount: amount * 100, // Razorpay expects paise
             currency: 'INR',
-            receipt: `wallet_topup_${req.user._id}_${Date.now()}`,
+            receipt: `wt_${Date.now()}`,
             notes: {
                 userId: req.user._id.toString(),
                 type: 'wallet_topup'
