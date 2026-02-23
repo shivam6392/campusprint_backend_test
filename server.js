@@ -14,7 +14,13 @@ app.use(cors({
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        if (req.originalUrl === '/api/print/webhook') {
+            req.rawBody = buf.toString('utf8');
+        }
+    }
+}));
 
 const fs = require('fs');
 const path = require('path');
@@ -59,5 +65,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+// Start Cron Jobs (Production Rule 9: Cleanup Mechanism)
+const startCronJobs = require('./cron/cleanupCron');
+startCronJobs();
 
 app.listen(PORT, console.log(`Server running on port ${PORT}`));

@@ -1,9 +1,7 @@
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
@@ -16,18 +14,12 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-
-// Multer config (store temp file)
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + '-' + file.originalname);
-    }
+// Rate limiting for signatures
+const signatureLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 5, // 5 requests per minute per IP
+    message: { success: false, message: 'Too many upload requests. Please try again later.' }
 });
-
-const upload = multer({ storage });
 
 
 
@@ -54,126 +46,114 @@ router.get('/orders', protect, async (req, res) => {
 
 
 // ================================
-// Upload PDF
+// Generate Cloudinary Signature
 // ================================
-router.post('/upload', protect, upload.single('pdf'), async (req, res) => {
+router.get('/upload-signature', protect, signatureLimiter, (req, res) => {
+    try {
+        const timestamp = Math.round((new Date).getTime() / 1000);
+        const folder = 'campusprint_uploads';
 
-    let filePath = '';
+        // Cloudinary signs the parameters we want to enforce
+        const paramsToSign = {
+            timestamp: timestamp,
+            folder: folder
+        };
+
+        const signature = cloudinary.utils.api_sign_request(
+            paramsToSign,
+            process.env.CLOUDINARY_API_SECRET
+        );
+
+        res.json({
+            success: true,
+            data: {
+                signature,
+                timestamp,
+                folder,
+                cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+                api_key: process.env.CLOUDINARY_API_KEY
+            }
+        });
+    } catch (error) {
+        console.error("Signature Error:", error);
+        res.status(500).json({ success: false, message: 'Could not generate signature' });
+    }
+});
+
+
+// ================================
+// Create Order (Post-Upload Verification)
+// ================================
+router.post('/orders', protect, async (req, res) => {
+    const { pdfUrl, publicId, originalName, copies, color, idempotencyKey } = req.body;
 
     try {
-
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'No PDF uploaded'
-            });
-        }
-
-        filePath = req.file.path;
-
-
-        // ====================
-        // Calculate pages
-        // ====================
-        const buffer = fs.readFileSync(filePath);
-        let pages = 1;
-        try {
-            const pdfData = await pdfParse(buffer);
-            pages = pdfData.numpages;
-        } catch (parseErr) {
-            // Fallback: use pdf-lib for PDFs that pdf-parse can't handle
-            try {
-                const { PDFDocument } = require('pdf-lib');
-                const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-                pages = pdfDoc.getPageCount();
-            } catch (libErr) {
-                console.log('Both pdf-parse and pdf-lib failed, defaulting to 1 page');
-                pages = 1;
+        // 1. Idempotency Check
+        if (idempotencyKey) {
+            const existingOrder = await PrintRequest.findOne({ idempotencyKey, userId: req.user._id });
+            if (existingOrder) {
+                return res.status(200).json({
+                    success: true,
+                    message: 'Order already exists',
+                    data: existingOrder
+                });
             }
         }
 
-
-        // ====================
-        // Upload to Cloudinary
-        // ====================
-        const cloudResult = await cloudinary.uploader.upload(filePath, {
-            folder: 'campusprint',
-            resource_type: 'raw'
-        });
-
-
-        const copies = parseInt(req.body.copies) || 1;
-
-        // Price Calculation with Color
-        const isColor = req.body.color === 'true';
-        const pricePerPage = isColor ? 8 : 1;
-        const totalCost = pages * copies * pricePerPage;
-
-
-        // ====================
-        // Save in MongoDB
-        // ====================
-        const printRequest = await PrintRequest.create({
-
-            userId: req.user._id,
-
-            pdfUrl: cloudResult.secure_url,
-
-            fileName: req.file.originalname,
-
-            pages: pages,
-
-            copies: copies,
-
-            color: isColor,
-
-            totalCost: totalCost,
-
-            paymentStatus: 'pending',
-
-            createdAt: new Date()
-
-        });
-
-
-        // ====================
-        // Delete temp file
-        // ====================
-        fs.unlinkSync(filePath);
-
-
-        // ====================
-        // Response
-        // ====================
-        res.status(201).json({
-
-            success: true,
-
-            message: 'PDF uploaded successfully',
-
-            data: printRequest
-
-        });
-
-
-    } catch (error) {
-
-        if (filePath && fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+        // 2. Domain Whitelist Verification
+        if (!pdfUrl || !pdfUrl.startsWith(`https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/`)) {
+            return res.status(400).json({ success: false, message: 'Invalid or unauthorized Cloudinary URL' });
         }
 
-        console.error(error);
+        // 3. Folder Alignment Verification
+        if (!publicId || !publicId.startsWith('campusprint_uploads/')) {
+            return res.status(400).json({ success: false, message: 'Invalid Cloudinary Public ID folder' });
+        }
 
-        res.status(500).json({
+        // 4. Admin API Verification - Fetch the True Page Count
+        let pages = 1;
+        try {
+            const resource = await cloudinary.api.resource(publicId, { pages: true });
+            if (resource.format !== 'pdf') {
+                return res.status(400).json({ success: false, message: 'File is not a PDF' });
+            }
+            pages = resource.pages || 1;
+        } catch (cloudinaryErr) {
+            console.error("Cloudinary Admin API Error:", cloudinaryErr);
+            return res.status(400).json({ success: false, message: 'Failed to verify file on Cloudinary' });
+        }
 
-            success: false,
+        // 5. Server-Side Native Pricing Calculation
+        const finalCopies = parseInt(copies) || 1;
+        const isColor = color === true || color === 'true';
+        const pricePerPage = isColor ? 8 : 1;
+        const totalCost = pages * finalCopies * pricePerPage;
 
-            message: error.message
-
+        // 6. DB Insertion
+        const printRequest = await PrintRequest.create({
+            userId: req.user._id,
+            pdfUrl: pdfUrl,
+            publicId: publicId,
+            fileName: originalName || 'Document.pdf',
+            pages: pages,
+            copies: finalCopies,
+            color: isColor,
+            totalCost: totalCost,
+            paymentStatus: 'pending',
+            idempotencyKey: idempotencyKey,
+            createdAt: new Date()
         });
 
-    }
+        res.status(201).json({
+            success: true,
+            message: 'Order created successfully',
+            data: printRequest
+        });
 
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+    }
 });
 
 
@@ -316,3 +296,53 @@ router.post('/pay-failed', protect, async (req, res) => {
 
 
 module.exports = router;
+
+// ================================
+// RAZORPAY WEBHOOK (Server-to-Server)
+// ================================
+router.post('/webhook', async (req, res) => {
+    try {
+        const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+        // Extract the exact byte string saved by server.js express.json() verify function
+        const payload = req.rawBody || JSON.stringify(req.body);
+
+        const signature = req.headers['x-razorpay-signature'];
+
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(payload)
+            .digest('hex');
+
+        if (expectedSignature === signature) {
+            // Parse payload
+            const event = JSON.parse(payload);
+
+            if (event.event === 'payment.captured') {
+                const paymentDetails = event.payload.payment.entity;
+                // Assuming notes or description contains the printRequestId
+                // In production, you pass printRequestId inside Razorpay notes when creating the order
+                const printRequestId = paymentDetails.notes.printRequestId;
+
+                if (printRequestId) {
+                    const request = await PrintRequest.findById(printRequestId);
+                    if (request && request.paymentStatus !== 'paid') {
+                        const printCode = Math.floor(1000 + Math.random() * 9000).toString();
+                        request.paymentStatus = 'paid';
+                        request.printCode = printCode;
+                        request.paymentId = paymentDetails.id;
+                        await request.save();
+                        console.log(`Webhook: Order ${printRequestId} marked as PAID`);
+                    }
+                }
+            }
+            res.status(200).json({ status: 'ok' });
+        } else {
+            console.error('Webhook signature invalid');
+            res.status(400).json({ status: 'Signature mismatch' });
+        }
+    } catch (error) {
+        console.error("Webhook Error:", error);
+        res.status(500).send('Webhook Processing Error');
+    }
+});

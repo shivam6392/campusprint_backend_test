@@ -44,6 +44,15 @@ const printRequestSchema = new mongoose.Schema({
     paymentId: {
         type: String,
     },
+    publicId: {
+        type: String,
+        required: true,
+    },
+    idempotencyKey: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
     createdAt: {
         type: Date,
         default: Date.now,
