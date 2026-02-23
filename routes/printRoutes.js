@@ -4,6 +4,11 @@ const { Storage } = require('@google-cloud/storage');
 const pdf = require('pdf-parse');
 const os = require('os');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
+
+const { protect } = require('../middleware/authMiddleware');
+const PrintRequest = require('../models/PrintRequest');
 
 // GCP config
 const storage = new Storage({
