@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const Razorpay = require('razorpay');
 const { protect } = require('../middleware/authMiddleware');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -77,6 +78,17 @@ router.post('/verify-payment', protect, async (req, res) => {
             { new: true, runValidators: true } // runValidators ensures it doesn't violate min: 0
         );
 
+        // Record the exact mathematical transaction logically on the ledger
+        await Transaction.create({
+            userId: req.user._id,
+            type: 'TOPUP',
+            amount: safeAmount,
+            status: 'SUCCESS',
+            razorpayOrderId: razorpay_order_id,
+            razorpayPaymentId: razorpay_payment_id,
+            description: 'Wallet top-up via Razorpay'
+        });
+
         res.json({
             success: true,
             message: 'Wallet recharged successfully',
@@ -101,6 +113,27 @@ router.get('/balance', protect, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error fetching balance' });
+    }
+});
+
+// ================================
+// Get Wallet Top-up History
+// STRICTLY filters for TOPUP only!
+// ================================
+router.get('/history', protect, async (req, res) => {
+    try {
+        const transactions = await Transaction.find({
+            userId: req.user._id,
+            type: 'TOPUP' // Ensures NO deductions/print requests appear here
+        }).sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: transactions
+        });
+    } catch (error) {
+        console.error("Wallet History Error:", error);
+        res.status(500).json({ success: false, message: 'Error fetching wallet history' });
     }
 });
 

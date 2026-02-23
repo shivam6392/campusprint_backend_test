@@ -10,6 +10,7 @@ const mongoose = require('mongoose'); // Added mongoose import
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
 
 // ==================================
 // Race Condition Webhook Cache Model
@@ -409,6 +410,26 @@ router.post('/pay-wallet', protect, async (req, res) => {
         order.printCode = printCode;
         order.paymentId = `wallet_${Date.now()}`;
         await order.save();
+
+        // 5. Record the Deduction on the Transaction Ledger
+        await Transaction.create({
+            userId: req.user._id,
+            type: 'DEDUCT',
+            amount: cost,
+            status: 'SUCCESS',
+            printRequestId: order._id,
+            description: `Payment for print order ${order._id}`
+        });
+
+        // 5. Record the Deduction on the Transaction Ledger
+        await Transaction.create({
+            userId: req.user._id,
+            type: 'DEDUCT',
+            amount: cost,
+            status: 'SUCCESS',
+            printRequestId: order._id,
+            description: `Payment for print order ${order._id}`
+        });
 
         res.json({
             success: true,
