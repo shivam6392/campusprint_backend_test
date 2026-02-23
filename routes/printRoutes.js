@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const mongoose = require('mongoose'); // Added mongoose import
 
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
@@ -113,28 +114,42 @@ router.post('/orders', protect, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 3. Create verifying order placeholder
+        // 3. Early Webhook Cache Check (Fix for Cloud Function Race Condition)
         const finalCopies = parseInt(copies) || 1;
         const isColor = color === true || color === 'true';
 
-        // 4. DB Insertion (verifying state, 0 pages initially)
+        const cachedWebhook = await WebhookCache.findOne({ publicId: publicId });
+
+        let initialPages = 0;
+        let initialCost = 0;
+        let initialStatus = 'verifying';
+
+        if (cachedWebhook) {
+            // GCP was incredibly fast; the pages were already parsed and cached!
+            initialPages = cachedWebhook.pages;
+            initialStatus = 'pending';
+            const pricePerPage = isColor ? 8 : 1;
+            initialCost = initialPages * finalCopies * pricePerPage;
+        }
+
+        // 4. DB Insertion 
         const printRequest = await PrintRequest.create({
             userId: req.user._id,
             pdfUrl: pdfUrl,
             publicId: publicId,
             fileName: originalName || 'Document.pdf',
-            pages: 0,
+            pages: initialPages,
             copies: finalCopies,
             color: isColor,
-            totalCost: 0,
-            paymentStatus: 'verifying',
+            totalCost: initialCost,
+            paymentStatus: initialStatus,
             idempotencyKey: idempotencyKey,
             createdAt: new Date()
         });
 
         res.status(201).json({
             success: true,
-            message: 'Order created in verifying state',
+            message: initialStatus === 'pending' ? 'Order created and instantly verified' : 'Order created in verifying state',
             data: printRequest
         });
 
@@ -183,8 +198,16 @@ router.post('/webhook/gcp-verify', async (req, res) => {
 
         // 2. Find the verifying order
         const order = await PrintRequest.findOne({ publicId, paymentStatus: 'verifying' });
+
         if (!order) {
-            return res.status(404).json({ success: false, message: 'Verifying order not found for this publicId' });
+            // RACE CONDITION HANDLER: The Android app hasn't executed POST /orders yet.
+            // Cache the result safely into MongoDB so that POST /orders reads it instantly.
+            await WebhookCache.findOneAndUpdate(
+                { publicId: publicId },
+                { pages: pages },
+                { upsert: true, new: true }
+            );
+            return res.status(200).json({ success: true, message: 'Early Webhook Cached successfully' });
         }
 
         // 3. Calculate Final Price
