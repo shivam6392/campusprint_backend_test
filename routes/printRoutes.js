@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { Storage } = require('@google-cloud/storage');
-const pdf = require('pdf-parse');
 const os = require('os');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
@@ -11,9 +10,9 @@ const mongoose = require('mongoose'); // Added mongoose import
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
 
-// ================================
+// ==================================
 // Race Condition Webhook Cache Model
-// ================================
+// ==================================
 const cacheSchema = new mongoose.Schema({
     publicId: { type: String, required: true, unique: true },
     pages: { type: Number, required: true },
