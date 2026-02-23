@@ -111,10 +111,10 @@ router.get('/upload-signature', protect, signatureLimiter, async (req, res) => {
 
 
 // ================================
-// Create Order (Post-Upload Verification)
+// Create Order (Instant Native Validation)
 // ================================
 router.post('/orders', protect, async (req, res) => {
-    const { pdfUrl, publicId, originalName, copies, color, idempotencyKey } = req.body;
+    const { pdfUrl, publicId, originalName, copies, color, pages, idempotencyKey } = req.body;
 
     try {
         // 1. Idempotency Check
@@ -134,23 +134,12 @@ router.post('/orders', protect, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid GCP Public ID folder' });
         }
 
-        // 3. Early Webhook Cache Check (Fix for Cloud Function Race Condition)
+        // 3. Calculate Prices Fast (Bypassing Cloud Functions)
         const finalCopies = parseInt(copies) || 1;
+        const finalPages = parseInt(pages) || 1;
         const isColor = color === true || color === 'true';
-
-        const cachedWebhook = await WebhookCache.findOne({ publicId: publicId });
-
-        let initialPages = 0;
-        let initialCost = 0;
-        let initialStatus = 'verifying';
-
-        if (cachedWebhook) {
-            // GCP was incredibly fast; the pages were already parsed and cached!
-            initialPages = cachedWebhook.pages;
-            initialStatus = 'pending';
-            const pricePerPage = isColor ? 8 : 1;
-            initialCost = initialPages * finalCopies * pricePerPage;
-        }
+        const pricePerPage = isColor ? 8 : 1;
+        const parsedCost = finalPages * finalCopies * pricePerPage;
 
         // 4. DB Insertion 
         const printRequest = await PrintRequest.create({
@@ -158,18 +147,18 @@ router.post('/orders', protect, async (req, res) => {
             pdfUrl: pdfUrl,
             publicId: publicId,
             fileName: originalName || 'Document.pdf',
-            pages: initialPages,
+            pages: finalPages,
             copies: finalCopies,
             color: isColor,
-            totalCost: initialCost,
-            paymentStatus: initialStatus,
+            totalCost: parsedCost,
+            paymentStatus: 'pending',
             idempotencyKey: idempotencyKey,
             createdAt: new Date()
         });
 
         res.status(201).json({
             success: true,
-            message: initialStatus === 'pending' ? 'Order created and instantly verified' : 'Order created in verifying state',
+            message: 'Order created perfectly',
             data: printRequest
         });
 
