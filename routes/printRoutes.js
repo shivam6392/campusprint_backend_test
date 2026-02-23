@@ -11,6 +11,16 @@ const mongoose = require('mongoose'); // Added mongoose import
 const { protect } = require('../middleware/authMiddleware');
 const PrintRequest = require('../models/PrintRequest');
 
+// ================================
+// Race Condition Webhook Cache Model
+// ================================
+const cacheSchema = new mongoose.Schema({
+    publicId: { type: String, required: true, unique: true },
+    pages: { type: Number, required: true },
+    createdAt: { type: Date, default: Date.now, expires: '24h' }
+});
+const WebhookCache = mongoose.models.WebhookCache || mongoose.model('WebhookCache', cacheSchema);
+
 // GCP config
 const storage = new Storage({
     projectId: process.env.GCP_PROJECT_ID,
