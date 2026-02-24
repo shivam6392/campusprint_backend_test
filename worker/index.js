@@ -91,7 +91,7 @@ async function processJob(jobId, userId, docxPublicId) {
                 stdio: 'pipe',
                 env: {
                     ...process.env,
-                    HOME: tmpDir,
+                    HOME: '/root', // Use pre-initialized profile baked in Docker image
                     TMPDIR: tmpDir,
                     XDG_RUNTIME_DIR: tmpDir,
                     SAL_USE_VCLPLUGIN: 'svp', // headless VCL plugin
