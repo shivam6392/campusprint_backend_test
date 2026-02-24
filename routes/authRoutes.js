@@ -117,25 +117,34 @@ router.put('/fcm-token', protect, async (req, res) => {
     }
 
     try {
+        console.log(`FCM Token Update Request for user: ${req.user._id}`);
         const user = await User.findById(req.user._id);
 
         if (!user) {
+            console.error(`User not found: ${req.user._id}`);
             return res.status(404).json({ message: 'User not found' });
         }
+
+        // Initialize fcmTokens if it doesn't exist
+        if (!user.fcmTokens) user.fcmTokens = [];
 
         // Check if token exists for device and update, or add new
         const existingTokenIndex = user.fcmTokens.findIndex(t => t.deviceId === deviceId);
 
         if (existingTokenIndex >= 0) {
+            console.log(`Updating existing token for device: ${deviceId}`);
             user.fcmTokens[existingTokenIndex].token = token;
             user.fcmTokens[existingTokenIndex].lastUpdated = Date.now();
         } else {
+            console.log(`Adding new token for device: ${deviceId}`);
             user.fcmTokens.push({ token, deviceId, lastUpdated: Date.now() });
         }
 
         await user.save();
+        console.log('FCM token registered successfully');
         res.status(200).json({ message: 'FCM token registered successfully' });
     } catch (error) {
+        console.error('FCM Token Registry Error:', error);
         res.status(500).json({ message: error.message });
     }
 });

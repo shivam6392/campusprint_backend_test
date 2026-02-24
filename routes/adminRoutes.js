@@ -17,8 +17,10 @@ const requireAdmin = (req, res, next) => {
 router.get('/users', requireAdmin, async (req, res) => {
     try {
         const users = await User.find({ 'fcmTokens.0': { $exists: true } }, 'name email _id');
+        console.log(`Admin User Fetch: Found ${users.length} users with active tokens.`);
         res.json({ success: true, data: users });
     } catch (err) {
+        console.error('Admin User Fetch Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
