@@ -225,10 +225,15 @@ app.get('/health', (req, res) => {
 });
 
 // ── Start ───────────────────────────────────────────
-const PORT = process.env.WORKER_PORT || 8080;
+const PORT = process.env.PORT || process.env.WORKER_PORT || 8080;
 
-connectDB().then(() => {
-    app.listen(PORT, () => {
-        console.log(`🚀 Word-to-PDF Worker running on port ${PORT}`);
+// Start HTTP server FIRST (Cloud Run needs this to pass health check)
+app.listen(PORT, () => {
+    console.log(`🚀 Word-to-PDF Worker running on port ${PORT}`);
+    // Connect to MongoDB after server starts
+    connectDB().then(() => {
+        console.log('✅ Worker connected to MongoDB');
+    }).catch(err => {
+        console.error('❌ MongoDB connection failed:', err.message);
     });
 });
