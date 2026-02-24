@@ -78,21 +78,28 @@ async function processJob(jobId, userId, docxPublicId) {
         fs.mkdirSync(userProfile, { recursive: true });
 
         await new Promise((resolve, reject) => {
-            const proc = spawn('libreoffice', [
+            const proc = spawn('soffice', [
                 '--headless',
                 '--norestore',
                 '--nofirststartwizard',
+                '--nologo',
                 `-env:UserInstallation=file://${userProfile}`,
-                '--convert-to', 'pdf',
+                '--convert-to', 'pdf:writer_pdf_Export',
                 '--outdir', tmpDir,
                 docxPath
             ], {
                 stdio: 'pipe',
-                env: { ...process.env, HOME: tmpDir }
+                env: {
+                    ...process.env,
+                    HOME: tmpDir,
+                    TMPDIR: tmpDir,
+                    XDG_RUNTIME_DIR: tmpDir,
+                    SAL_USE_VCLPLUGIN: 'svp', // headless VCL plugin
+                }
             });
 
             const timer = setTimeout(() => {
-                proc.kill();
+                proc.kill('SIGKILL');
                 reject(new Error('LibreOffice conversion timed out after 5 minutes'));
             }, 300000);
 
