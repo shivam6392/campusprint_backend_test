@@ -42,12 +42,16 @@ const ConversionJob = require('../models/ConversionJob');
 const User = require('../models/User');
 
 // ── GCS ─────────────────────────────────────────────
+// On Cloud Run, Application Default Credentials are injected automatically.
+// Explicit keys are only used if provided (local dev), otherwise ADC is used.
 const storage = new Storage({
     projectId: process.env.GCP_PROJECT_ID,
-    credentials: {
-        client_email: process.env.GCP_CLIENT_EMAIL,
-        private_key: process.env.GCP_PRIVATE_KEY ? process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
-    }
+    ...(process.env.GCP_CLIENT_EMAIL && process.env.GCP_PRIVATE_KEY ? {
+        credentials: {
+            client_email: process.env.GCP_CLIENT_EMAIL,
+            private_key: process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }
+    } : {})
 });
 const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint_uploads_prod';
 
