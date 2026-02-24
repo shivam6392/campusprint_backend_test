@@ -1,10 +1,10 @@
 /**
- * Cloud Run Worker for Word-to-PDF Conversion
+ * Cloud Run Worker — Word to PDF via CloudConvert API
  */
 
 const { Storage } = require('@google-cloud/storage');
 const mongoose = require('mongoose');
-const { spawn } = require('child_process');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -13,30 +13,28 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-// ── Firebase Admin (for FCM) ────────────────────────
+// ── Firebase Admin ───────────────────────────────────
 const admin = require('firebase-admin');
 if (!admin.apps.length) {
     try {
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+            const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+            admin.initializeApp({ credential: admin.credential.cert(sa) });
         } else {
-            // Use Application Default Credentials on Cloud Run
             admin.initializeApp({ credential: admin.credential.applicationDefault() });
         }
-        console.log('Firebase Admin initialized in worker');
+        console.log('Firebase Admin initialized');
     } catch (err) {
-        console.error('Firebase init error in worker:', err.message);
+        console.error('Firebase init error:', err.message);
     }
 }
 
-// ── MongoDB ─────────────────────────────────────────
+// ── MongoDB ──────────────────────────────────────────
 const connectDB = require('../config/db');
 const ConversionJob = require('../models/ConversionJob');
 const User = require('../models/User');
 
-// ── GCS ─────────────────────────────────────────────
-// On Cloud Run, ADC is injected automatically — no explicit keys needed.
+// ── GCS ──────────────────────────────────────────────
 const storage = new Storage({
     projectId: process.env.GCP_PROJECT_ID,
     ...(process.env.GCP_CLIENT_EMAIL && process.env.GCP_PRIVATE_KEY ? {
@@ -47,81 +45,133 @@ const storage = new Storage({
     } : {})
 });
 const bucketName = process.env.GCP_BUCKET_NAME || 'campusprint_uploads_prod';
+const CLOUDCONVERT_API_KEY = process.env.CLOUDCONVERT_API_KEY;
 
-// ── Core Conversion Logic ───────────────────────────
+// ── CloudConvert Helper ──────────────────────────────
+async function convertWithCloudConvert(inputUrl) {
+    // Step 1: Create job
+    const jobPayload = JSON.stringify({
+        tasks: {
+            'import-file': { operation: 'import/url', url: inputUrl },
+            'convert-file': {
+                operation: 'convert',
+                input: 'import-file',
+                output_format: 'pdf',
+                input_format: 'docx',
+            },
+            'export-file': {
+                operation: 'export/url',
+                input: 'convert-file',
+            }
+        }
+    });
+
+    const jobRes = await ccRequest('POST', '/v2/jobs', jobPayload);
+    const jobId = jobRes.data.id;
+    console.log(`  📤 CloudConvert job created: ${jobId}`);
+
+    // Step 2: Wait for job completion (poll every 3s, max 5 min)
+    for (let i = 0; i < 100; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const statusRes = await ccRequest('GET', `/v2/jobs/${jobId}`, null);
+        const job = statusRes.data;
+
+        if (job.status === 'finished') {
+            console.log('  ✅ CloudConvert job finished');
+            // Find export task result
+            const exportTask = job.tasks.find(t => t.operation === 'export/url' && t.result);
+            if (!exportTask || !exportTask.result.files || !exportTask.result.files.length) {
+                throw new Error('No output file from CloudConvert');
+            }
+            return exportTask.result.files[0].url;
+        }
+
+        if (job.status === 'error') {
+            const errorTask = job.tasks.find(t => t.status === 'error');
+            throw new Error(`CloudConvert error: ${errorTask ? errorTask.message : 'Unknown error'}`);
+        }
+
+        console.log(`  ⏳ CloudConvert job status: ${job.status} (attempt ${i + 1})`);
+    }
+    throw new Error('CloudConvert job timed out after 5 minutes');
+}
+
+// Raw HTTPS request helper for CloudConvert API
+function ccRequest(method, urlPath, body) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'api.cloudconvert.com',
+            path: urlPath,
+            method,
+            headers: {
+                'Authorization': `Bearer ${CLOUDCONVERT_API_KEY}`,
+                'Content-Type': 'application/json',
+            }
+        };
+        const req = https.request(options, res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (res.statusCode >= 400) reject(new Error(`CloudConvert API error ${res.statusCode}: ${data}`));
+                    else resolve(parsed);
+                } catch (e) {
+                    reject(new Error(`CloudConvert parse error: ${data}`));
+                }
+            });
+        });
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+// Download file from URL to local path
+function downloadUrl(url, destPath) {
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(destPath);
+        https.get(url, res => {
+            res.pipe(file);
+            file.on('finish', () => file.close(resolve));
+        }).on('error', err => {
+            fs.unlink(destPath, () => { });
+            reject(err);
+        });
+    });
+}
+
+// ── Core Job Logic ───────────────────────────────────
 async function processJob(jobId, userId, docxPublicId) {
     console.log(`🔄 Processing job ${jobId}...`);
 
     const job = await ConversionJob.findById(jobId);
-    if (!job) {
-        console.error(`Job ${jobId} not found in DB`);
-        return;
-    }
+    if (!job) { console.error(`Job ${jobId} not found`); return; }
 
     job.status = 'processing';
     await job.save();
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'w2p-'));
-    const docxPath = path.join(tmpDir, 'input.docx');
-    const pdfPath = path.join(tmpDir, 'input.pdf');
+    const pdfPath = path.join(tmpDir, 'output.pdf');
 
     try {
-        // 1. Download .docx from GCS
-        console.log(`  ⬇️ Downloading ${docxPublicId}...`);
-        await storage.bucket(bucketName).file(docxPublicId).download({ destination: docxPath });
-
-        // 2. Convert with LibreOffice headless
-        // --norestore and --nofirststartwizard prevent LibreOffice from hanging
-        // on Cloud Run by skipping user profile setup dialogs.
-        console.log('  ⚙️ Converting with LibreOffice...');
-        const userProfile = path.join(tmpDir, 'lo-profile');
-        fs.mkdirSync(userProfile, { recursive: true });
-
-        await new Promise((resolve, reject) => {
-            const proc = spawn('soffice', [
-                '--headless',
-                '--norestore',
-                '--nofirststartwizard',
-                '--nologo',
-                `-env:UserInstallation=file://${userProfile}`,
-                '--convert-to', 'pdf:writer_pdf_Export',
-                '--outdir', tmpDir,
-                docxPath
-            ], {
-                stdio: 'pipe',
-                env: {
-                    ...process.env,
-                    HOME: '/root', // Use pre-initialized profile baked in Docker image
-                    TMPDIR: tmpDir,
-                    XDG_RUNTIME_DIR: tmpDir,
-                    SAL_USE_VCLPLUGIN: 'svp', // headless VCL plugin
-                }
-            });
-
-            const timer = setTimeout(() => {
-                proc.kill('SIGKILL');
-                reject(new Error('LibreOffice conversion timed out after 5 minutes'));
-            }, 300000);
-
-            proc.stdout.on('data', d => console.log('  LO:', d.toString().trim()));
-            proc.stderr.on('data', d => console.log('  LO ERR:', d.toString().trim()));
-
-            proc.on('close', code => {
-                clearTimeout(timer);
-                if (code === 0) resolve();
-                else reject(new Error(`LibreOffice exited with code ${code}`));
-            });
-            proc.on('error', err => {
-                clearTimeout(timer);
-                reject(err);
-            });
+        // 1. Generate signed URL for the .docx (so CloudConvert can download it)
+        console.log(`  🔗 Generating signed URL for ${docxPublicId}...`);
+        const [signedUrl] = await storage.bucket(bucketName).file(docxPublicId).getSignedUrl({
+            version: 'v4',
+            action: 'read',
+            expires: Date.now() + 30 * 60 * 1000, // 30 min
         });
 
-        if (!fs.existsSync(pdfPath)) {
-            throw new Error('LibreOffice conversion produced no output file');
-        }
+        // 2. Convert via CloudConvert
+        console.log('  ☁️ Sending to CloudConvert...');
+        const pdfDownloadUrl = await convertWithCloudConvert(signedUrl);
 
-        // 3. Upload converted PDF to GCS
+        // 3. Download the converted PDF
+        console.log('  ⬇️ Downloading converted PDF...');
+        await downloadUrl(pdfDownloadUrl, pdfPath);
+
+        // 4. Upload to GCS
         const pdfPublicId = docxPublicId
             .replace('campusprint_docx/', 'campusprint_converted/')
             .replace('.docx', '.pdf');
@@ -132,22 +182,22 @@ async function processJob(jobId, userId, docxPublicId) {
             metadata: { contentType: 'application/pdf' },
         });
 
-        // 4. Generate signed download URL (valid 24h)
-        const [downloadUrl] = await storage.bucket(bucketName).file(pdfPublicId).getSignedUrl({
+        // 5. Generate a signed download URL (24h)
+        const [downloadUrl2] = await storage.bucket(bucketName).file(pdfPublicId).getSignedUrl({
             version: 'v4',
             action: 'read',
             expires: Date.now() + 24 * 60 * 60 * 1000,
         });
 
-        // 5. Update job in MongoDB
+        // 6. Update Firestore job
         job.status = 'done';
         job.pdfPublicId = pdfPublicId;
-        job.downloadUrl = downloadUrl;
+        job.downloadUrl = downloadUrl2;
         await job.save();
-        console.log(`  ✅ Job ${jobId} completed successfully`);
+        console.log(`  ✅ Job ${jobId} completed`);
 
-        // 6. Send FCM push notification
-        await sendCompletionPush(userId, jobId, downloadUrl, job.originalName);
+        // 7. FCM push
+        await sendCompletionPush(userId, jobId, downloadUrl2, job.originalName);
 
     } catch (error) {
         console.error(`  ❌ Job ${jobId} failed:`, error.message);
@@ -156,80 +206,51 @@ async function processJob(jobId, userId, docxPublicId) {
         await job.save();
         await sendFailurePush(userId, jobId, job.originalName);
     } finally {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { }
     }
 }
 
-// ── FCM Notifications ───────────────────────────────
+// ── FCM ─────────────────────────────────────────────
 async function sendCompletionPush(userId, jobId, downloadUrl, originalName) {
     try {
         const user = await User.findById(userId);
-        if (!user || !user.fcmTokens || user.fcmTokens.length === 0) return;
+        if (!user?.fcmTokens?.length) return;
         const tokens = user.fcmTokens.map(t => t.token);
         await admin.messaging().sendEachForMulticast({
-            notification: {
-                title: '✅ PDF Ready!',
-                body: `${originalName || 'Your document'} has been converted to PDF.`,
-            },
-            data: {
-                type: 'word_to_pdf_complete',
-                jobId: jobId.toString(),
-                downloadUrl: downloadUrl,
-            },
-            android: {
-                priority: 'high',
-                notification: { channelId: 'campusprint_default_channel', sound: 'default' },
-            },
+            notification: { title: '✅ PDF Ready!', body: `${originalName || 'Your document'} converted successfully.` },
+            data: { type: 'word_to_pdf_complete', jobId: jobId.toString(), downloadUrl },
+            android: { priority: 'high', notification: { channelId: 'campusprint_default_channel', sound: 'default' } },
             tokens,
         });
         console.log(`  📱 FCM push sent to user ${userId}`);
-    } catch (err) {
-        console.error('FCM push error:', err.message);
-    }
+    } catch (err) { console.error('FCM push error:', err.message); }
 }
 
 async function sendFailurePush(userId, jobId, originalName) {
     try {
         const user = await User.findById(userId);
-        if (!user || !user.fcmTokens || user.fcmTokens.length === 0) return;
+        if (!user?.fcmTokens?.length) return;
         const tokens = user.fcmTokens.map(t => t.token);
         await admin.messaging().sendEachForMulticast({
-            notification: {
-                title: '❌ Conversion Failed',
-                body: `Could not convert ${originalName || 'your document'}. Please try again.`,
-            },
+            notification: { title: '❌ Conversion Failed', body: `Could not convert ${originalName || 'your document'}.` },
             data: { type: 'word_to_pdf_failed', jobId: jobId.toString() },
-            android: {
-                priority: 'high',
-                notification: { channelId: 'campusprint_default_channel', sound: 'default' },
-            },
+            android: { priority: 'high', notification: { channelId: 'campusprint_default_channel', sound: 'default' } },
             tokens,
         });
-    } catch (err) {
-        console.error('FCM failure push error:', err.message);
-    }
+    } catch (err) { console.error('FCM failure push error:', err.message); }
 }
 
-// ── HTTP Server for Pub/Sub Push ────────────────────
+// ── HTTP Server ──────────────────────────────────────
 const app = express();
 app.use(express.json());
 
 app.post('/', async (req, res) => {
     try {
         const message = req.body.message;
-        if (!message || !message.data) {
-            return res.status(400).send('Invalid Pub/Sub message');
-        }
-
-        const data = JSON.parse(Buffer.from(message.data, 'base64').toString());
-        const { jobId, userId, docxPublicId } = data;
+        if (!message?.data) return res.status(400).send('Invalid Pub/Sub message');
+        const { jobId, userId, docxPublicId } = JSON.parse(Buffer.from(message.data, 'base64').toString());
         console.log(`📨 Received Pub/Sub message for job: ${jobId}`);
-
-        // Acknowledge immediately, process async
-        processJob(jobId, userId, docxPublicId).catch(err => {
-            console.error('Unhandled job error:', err);
-        });
-
+        processJob(jobId, userId, docxPublicId).catch(err => console.error('Unhandled job error:', err));
         res.status(200).send('OK');
     } catch (error) {
         console.error('Pub/Sub handler error:', error);
@@ -237,18 +258,11 @@ app.post('/', async (req, res) => {
     }
 });
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'Worker is running', service: 'word-to-pdf-worker' });
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', service: 'word-to-pdf-worker' }));
 
-// ── Start ───────────────────────────────────────────
-const PORT = process.env.PORT || process.env.WORKER_PORT || 8080;
-
+// ── Start ────────────────────────────────────────────
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`🚀 Word-to-PDF Worker running on port ${PORT}`);
-    connectDB().then(() => {
-        console.log('✅ Worker connected to MongoDB');
-    }).catch(err => {
-        console.error('❌ MongoDB connection failed:', err.message);
-    });
+    connectDB().then(() => console.log('✅ MongoDB connected')).catch(err => console.error('MongoDB error:', err.message));
 });
