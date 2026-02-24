@@ -10,7 +10,7 @@
 
 const { Storage } = require('@google-cloud/storage');
 const mongoose = require('mongoose');
-const { execSync } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -23,14 +23,14 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const admin = require('firebase-admin');
 if (!admin.apps.length) {
     try {
-        let serviceAccount;
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        }
-        if (serviceAccount) {
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
             admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-            console.log('Firebase Admin initialized in worker');
+        } else {
+            // Use Application Default Credentials on Cloud Run
+            admin.initializeApp({ credential: admin.credential.applicationDefault() });
         }
+        console.log('Firebase Admin initialized in worker');
     } catch (err) {
         console.error('Firebase init error in worker:', err.message);
     }
@@ -77,11 +77,28 @@ async function processJob(jobId, userId, docxPublicId) {
         console.log(`  ⬇️ Downloading ${docxPublicId}...`);
         await storage.bucket(bucketName).file(docxPublicId).download({ destination: docxPath });
 
-        // 2. Convert with LibreOffice headless
+        // 2. Convert with LibreOffice headless (async to avoid Cloud Run timeout)
         console.log('  ⚙️ Converting with LibreOffice...');
-        execSync(`libreoffice --headless --convert-to pdf --outdir "${tmpDir}" "${docxPath}"`, {
-            timeout: 120000, // 2 minute timeout
-            stdio: 'pipe',
+        await new Promise((resolve, reject) => {
+            const proc = spawn('libreoffice', [
+                '--headless', '--convert-to', 'pdf',
+                '--outdir', tmpDir, docxPath
+            ], { stdio: 'pipe' });
+
+            const timer = setTimeout(() => {
+                proc.kill();
+                reject(new Error('LibreOffice conversion timed out after 5 minutes'));
+            }, 300000); // 5 minutes
+
+            proc.on('close', code => {
+                clearTimeout(timer);
+                if (code === 0) resolve();
+                else reject(new Error(`LibreOffice exited with code ${code}`));
+            });
+            proc.on('error', err => {
+                clearTimeout(timer);
+                reject(err);
+            });
         });
 
         if (!fs.existsSync(pdfPath)) {
