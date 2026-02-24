@@ -41,9 +41,8 @@ const conversionJobSchema = new mongoose.Schema({
     },
 });
 
-conversionJobSchema.pre('save', function (next) {
+conversionJobSchema.pre('save', async function () {
     this.updatedAt = Date.now();
-    next();
 });
 
 const ConversionJob = mongoose.model('ConversionJob', conversionJobSchema);
