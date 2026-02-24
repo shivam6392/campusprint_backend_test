@@ -5,11 +5,25 @@ const path = require('path');
 // Initialize Firebase Admin using the specific service account file
 if (!admin.apps.length) {
     try {
-        const serviceAccount = require(path.join(__dirname, '../config/firebase-service-account.json'));
+        let serviceAccount;
+        const localFile = path.join(__dirname, '../config/firebase-service-account.json');
+
+        // Check if we are running in production with the JSON stringified in an Environment Variable
+        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        }
+        // Fallback to local file for development
+        else if (require('fs').existsSync(localFile)) {
+            serviceAccount = require(localFile);
+        } else {
+            console.error('⚠️ Firebase Admin Initialization Warning: FIREBASE_SERVICE_ACCOUNT is missing from environment variables and the local JSON file does not exist.');
+            return;
+        }
+
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
-        console.log('Firebase Admin initialized successfully with local service account credentials');
+        console.log('Firebase Admin initialized successfully');
     } catch (error) {
         console.error('Firebase Admin initialization error', error.stack);
     }
