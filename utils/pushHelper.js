@@ -53,6 +53,22 @@ const sendPushNotification = async (userId, title, body, dataPayload = {}) => {
                 body
             },
             data: dataPayload,
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'campusprint_default_channel',
+                    priority: 'high',
+                    sound: 'default'
+                }
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        contentAvailable: true,
+                        priority: 10
+                    }
+                }
+            },
             tokens: tokens
         };
 
