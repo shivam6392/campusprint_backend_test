@@ -24,6 +24,11 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     },
+    fcmTokens: [{
+        token: String,
+        deviceId: String,
+        lastUpdated: { type: Date, default: Date.now }
+    }],
 });
 
 userSchema.pre('save', async function (next) {

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { protect } = require('../middleware/authMiddleware');
 
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -100,6 +101,40 @@ router.post('/sync', async (req, res) => {
         } else {
             res.status(400).json({ message: 'Invalid user data' });
         }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// @desc    Register or update an FCM token for push notifications
+// @route   PUT /api/auth/fcm-token
+// @access  Private
+router.put('/fcm-token', protect, async (req, res) => {
+    const { token, deviceId } = req.body;
+
+    if (!token || !deviceId) {
+        return res.status(400).json({ message: 'Token and deviceId are required' });
+    }
+
+    try {
+        const user = await User.findById(req.user._id);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if token exists for device and update, or add new
+        const existingTokenIndex = user.fcmTokens.findIndex(t => t.deviceId === deviceId);
+
+        if (existingTokenIndex >= 0) {
+            user.fcmTokens[existingTokenIndex].token = token;
+            user.fcmTokens[existingTokenIndex].lastUpdated = Date.now();
+        } else {
+            user.fcmTokens.push({ token, deviceId, lastUpdated: Date.now() });
+        }
+
+        await user.save();
+        res.status(200).json({ message: 'FCM token registered successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

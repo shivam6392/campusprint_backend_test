@@ -31,15 +31,18 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir);
 }
 
+// Serve standard static assets like the Admin UI
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/print', require('./routes/printRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'API is running', version: '1.0.0' });
 });
-
 app.get('/api/config', (req, res) => {
     res.json({
         RAZORPAY_KEY: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY || '',

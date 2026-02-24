@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampusPrint Admin Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --bg: #F3F4F6;
+            --card-bg: #FFFFFF;
+            --text-main: #111827;
+            --text-sub: #6B7280;
+            --border: #E5E7EB;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 2rem;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            color: var(--primary);
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-sub);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        #dashboard-section {
+            display: none;
+        }
+
+        .users-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .user-item:last-child {
+            border-bottom: none;
+        }
+        .user-item input {
+            margin-right: 0.75rem;
+            width: auto;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #10B981;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transform: translateY(150%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .toast.error { background: #EF4444; }
+        .toast.show { transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Login Section -->
+        <div id="login-section" class="card">
+            <h1>Admin Login</h1>
+            <div class="form-group">
+                <label for="password">Enter Admin Password</label>
+                <input type="password" id="password" placeholder="••••••••">
+            </div>
+            <button onclick="login()">Access Dashboard</button>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="card">
+            <h1>Send Push Notification</h1>
+            
+            <div class="form-group">
+                <label for="target">Target Audience</label>
+                <select id="target" onchange="toggleUsersList()">
+                    <option value="ALL">All Registered Users (Broadcast)</option>
+                    <option value="SPECIFIC">Select Specific Users</option>
+                </select>
+                <div id="usersList" class="users-list">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="title">Notification Title</label>
+                <input type="text" id="title" placeholder="e.g. Free Prints Today!">
+            </div>
+
+            <div class="form-group">
+                <label for="body">Notification Message</label>
+                <textarea id="body" rows="3" placeholder="e.g. Stop by the library to claim your 20 free print credits..."></textarea>
+            </div>
+
+            <button onclick="sendPush()">Send Notification 🚀</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let adminPwd = '';
+        let allUsers = [];
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = `toast show ${isError ? 'error' : ''}`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        async function login() {
+            const pwd = document.getElementById('password').value;
+            if(!pwd) return showToast('Please enter a password', true);
+            
+            try {
+                const res = await fetch('/api/admin/users', { headers: { 'x-admin-password': pwd } });
+                const json = await res.json();
+                
+                if (json.success) {
+                    adminPwd = pwd;
+                    allUsers = json.data;
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('dashboard-section').style.display = 'block';
+                    populateUsers();
+                    showToast('Logged in successfully!');
+                } else {
+                    showToast('Invalid Password!', true);
+                }
+            } catch (e) {
+                showToast('Server error', true);
+            }
+        }
+
+        function toggleUsersList() {
+            const target = document.getElementById('target').value;
+            document.getElementById('usersList').style.display = target === 'SPECIFIC' ? 'block' : 'none';
+        }
+
+        function populateUsers() {
+            const list = document.getElementById('usersList');
+            if(allUsers.length === 0) {
+                list.innerHTML = '<div style="padding:0.5rem;color:var(--text-sub);font-size:0.875rem;">No active devices found.</div>';
+                return;
+            }
+            list.innerHTML = allUsers.map(u => `
+                <label class="user-item">
+                    <input type="checkbox" value="${u._id}" class="user-checkbox">
+                    ${u.name} (${u.email})
+                </label>
+            `).join('');
+        }
+
+        async function sendPush() {
+            const title = document.getElementById('title').value;
+            const body = document.getElementById('body').value;
+            const targetMode = document.getElementById('target').value;
+            
+            if(!title || !body) return showToast('Please fill out the title and message!', true);
+
+            let targetUserIds = 'ALL';
+            if (targetMode === 'SPECIFIC') {
+                const checks = document.querySelectorAll('.user-checkbox:checked');
+                targetUserIds = Array.from(checks).map(c => c.value);
+                if (targetUserIds.length === 0) return showToast('Select at least 1 user!', true);
+            }
+
+            try {
+                const btn = document.querySelector('#dashboard-section button');
+                btn.textContent = 'Sending...';
+                btn.disabled = true;
+
+                const res = await fetch('/api/admin/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPwd },
+                    body: JSON.stringify({ targetUserIds, title, body })
+                });
+                const json = await res.json();
+                
+                if(json.success) {
+                    showToast(json.message);
+                    document.getElementById('title').value = '';
+                    document.getElementById('body').value = '';
+                } else {
+                    showToast(json.message || 'Failed to send', true);
+                }
+            } catch (e) {
+                showToast('Server error', true);
+            } finally {
+                const btn = document.querySelector('#dashboard-section button');
+                btn.textContent = 'Send Notification 🚀';
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
