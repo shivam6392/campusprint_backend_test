@@ -38,6 +38,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/print', require('./routes/printRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/pdf', require('./routes/pdfRoutes'));
 
 
 app.get('/api/health', (req, res) => {
