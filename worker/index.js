@@ -1,11 +1,5 @@
 /**
  * Cloud Run Worker for Word-to-PDF Conversion
- * 
- * This service subscribes to a Pub/Sub topic, downloads .docx files from GCS,
- * converts them to PDF using LibreOffice headless, uploads the result back to GCS,
- * updates the job status in MongoDB, and sends an FCM push notification.
- * 
- * Deployment: Docker container on Cloud Run with LibreOffice installed.
  */
 
 const { Storage } = require('@google-cloud/storage');
@@ -42,8 +36,7 @@ const ConversionJob = require('../models/ConversionJob');
 const User = require('../models/User');
 
 // ── GCS ─────────────────────────────────────────────
-// On Cloud Run, Application Default Credentials are injected automatically.
-// Explicit keys are only used if provided (local dev), otherwise ADC is used.
+// On Cloud Run, ADC is injected automatically — no explicit keys needed.
 const storage = new Storage({
     projectId: process.env.GCP_PROJECT_ID,
     ...(process.env.GCP_CLIENT_EMAIL && process.env.GCP_PRIVATE_KEY ? {
@@ -70,25 +63,41 @@ async function processJob(jobId, userId, docxPublicId) {
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'w2p-'));
     const docxPath = path.join(tmpDir, 'input.docx');
-    const pdfPath = path.join(tmpDir, 'input.pdf'); // LibreOffice outputs same name with .pdf
+    const pdfPath = path.join(tmpDir, 'input.pdf');
 
     try {
         // 1. Download .docx from GCS
         console.log(`  ⬇️ Downloading ${docxPublicId}...`);
         await storage.bucket(bucketName).file(docxPublicId).download({ destination: docxPath });
 
-        // 2. Convert with LibreOffice headless (async to avoid Cloud Run timeout)
+        // 2. Convert with LibreOffice headless
+        // --norestore and --nofirststartwizard prevent LibreOffice from hanging
+        // on Cloud Run by skipping user profile setup dialogs.
         console.log('  ⚙️ Converting with LibreOffice...');
+        const userProfile = path.join(tmpDir, 'lo-profile');
+        fs.mkdirSync(userProfile, { recursive: true });
+
         await new Promise((resolve, reject) => {
             const proc = spawn('libreoffice', [
-                '--headless', '--convert-to', 'pdf',
-                '--outdir', tmpDir, docxPath
-            ], { stdio: 'pipe' });
+                '--headless',
+                '--norestore',
+                '--nofirststartwizard',
+                `-env:UserInstallation=file://${userProfile}`,
+                '--convert-to', 'pdf',
+                '--outdir', tmpDir,
+                docxPath
+            ], {
+                stdio: 'pipe',
+                env: { ...process.env, HOME: tmpDir }
+            });
 
             const timer = setTimeout(() => {
                 proc.kill();
                 reject(new Error('LibreOffice conversion timed out after 5 minutes'));
-            }, 300000); // 5 minutes
+            }, 300000);
+
+            proc.stdout.on('data', d => console.log('  LO:', d.toString().trim()));
+            proc.stderr.on('data', d => console.log('  LO ERR:', d.toString().trim()));
 
             proc.on('close', code => {
                 clearTimeout(timer);
@@ -128,7 +137,6 @@ async function processJob(jobId, userId, docxPublicId) {
         job.pdfPublicId = pdfPublicId;
         job.downloadUrl = downloadUrl;
         await job.save();
-
         console.log(`  ✅ Job ${jobId} completed successfully`);
 
         // 6. Send FCM push notification
@@ -139,14 +147,9 @@ async function processJob(jobId, userId, docxPublicId) {
         job.status = 'failed';
         job.error = error.message;
         await job.save();
-
-        // Notify user of failure
         await sendFailurePush(userId, jobId, job.originalName);
     } finally {
-        // Cleanup temp files
-        try {
-            fs.rmSync(tmpDir, { recursive: true, force: true });
-        } catch (e) { /* ignore */ }
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
     }
 }
 
@@ -155,7 +158,6 @@ async function sendCompletionPush(userId, jobId, downloadUrl, originalName) {
     try {
         const user = await User.findById(userId);
         if (!user || !user.fcmTokens || user.fcmTokens.length === 0) return;
-
         const tokens = user.fcmTokens.map(t => t.token);
         await admin.messaging().sendEachForMulticast({
             notification: {
@@ -169,11 +171,7 @@ async function sendCompletionPush(userId, jobId, downloadUrl, originalName) {
             },
             android: {
                 priority: 'high',
-                notification: {
-                    channelId: 'campusprint_default_channel',
-                    priority: 'high',
-                    sound: 'default',
-                },
+                notification: { channelId: 'campusprint_default_channel', sound: 'default' },
             },
             tokens,
         });
@@ -187,23 +185,16 @@ async function sendFailurePush(userId, jobId, originalName) {
     try {
         const user = await User.findById(userId);
         if (!user || !user.fcmTokens || user.fcmTokens.length === 0) return;
-
         const tokens = user.fcmTokens.map(t => t.token);
         await admin.messaging().sendEachForMulticast({
             notification: {
                 title: '❌ Conversion Failed',
                 body: `Could not convert ${originalName || 'your document'}. Please try again.`,
             },
-            data: {
-                type: 'word_to_pdf_failed',
-                jobId: jobId.toString(),
-            },
+            data: { type: 'word_to_pdf_failed', jobId: jobId.toString() },
             android: {
                 priority: 'high',
-                notification: {
-                    channelId: 'campusprint_default_channel',
-                    sound: 'default',
-                },
+                notification: { channelId: 'campusprint_default_channel', sound: 'default' },
             },
             tokens,
         });
@@ -213,7 +204,6 @@ async function sendFailurePush(userId, jobId, originalName) {
 }
 
 // ── HTTP Server for Pub/Sub Push ────────────────────
-// Cloud Run receives Pub/Sub messages as HTTP POST requests
 const app = express();
 app.use(express.json());
 
@@ -226,10 +216,9 @@ app.post('/', async (req, res) => {
 
         const data = JSON.parse(Buffer.from(message.data, 'base64').toString());
         const { jobId, userId, docxPublicId } = data;
-
         console.log(`📨 Received Pub/Sub message for job: ${jobId}`);
 
-        // Process asynchronously but acknowledge immediately
+        // Acknowledge immediately, process async
         processJob(jobId, userId, docxPublicId).catch(err => {
             console.error('Unhandled job error:', err);
         });
@@ -248,10 +237,8 @@ app.get('/health', (req, res) => {
 // ── Start ───────────────────────────────────────────
 const PORT = process.env.PORT || process.env.WORKER_PORT || 8080;
 
-// Start HTTP server FIRST (Cloud Run needs this to pass health check)
 app.listen(PORT, () => {
     console.log(`🚀 Word-to-PDF Worker running on port ${PORT}`);
-    // Connect to MongoDB after server starts
     connectDB().then(() => {
         console.log('✅ Worker connected to MongoDB');
     }).catch(err => {
