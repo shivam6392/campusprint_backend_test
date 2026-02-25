@@ -155,6 +155,10 @@ async function processJob(jobId, userId, docxPublicId) {
     const pdfPath = path.join(tmpDir, 'output.pdf');
 
     try {
+        const clientEmail = await storage.getServiceAccount();
+        console.log(`  🔍 Active Identity: ${clientEmail || 'metadata-server (ADC)'}`);
+        console.log(`  🔍 Project ID: ${process.env.GCP_PROJECT_ID}`);
+
         // 1. Generate signed URL for the .docx (so CloudConvert can download it)
         console.log(`  🔗 Generating signed URL for ${docxPublicId}...`);
         const [signedUrl] = await storage.bucket(bucketName).file(docxPublicId).getSignedUrl({
